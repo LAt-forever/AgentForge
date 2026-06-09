@@ -35,6 +35,8 @@ async def lifespan(app: FastAPI):
     llm_client = LLMClient(
         anthropic_key=settings.anthropic_api_key,
         openai_key=settings.openai_api_key,
+        deepseek_key=settings.deepseek_api_key,
+        deepseek_base_url=settings.deepseek_base_url,
     )
     state_store = StateStore(base_dir=os.path.join(settings.output_dir, "states"))
     ws_manager = WebSocketManager()

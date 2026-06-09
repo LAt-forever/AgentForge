@@ -5,7 +5,7 @@ description = "Multi-Agent collaborative coding system"
 requires-python = ">=3.11"
 
 [tool.pytest.ini_options]
-testpaths = ["backend"]
+testpaths = ["tests/backend"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"

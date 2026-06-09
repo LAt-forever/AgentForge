@@ -20,13 +20,24 @@ class LLMClient:
         "claude-3-5-haiku-20241022": "gpt-4o-mini",
         "gpt-4o": "claude-3-5-sonnet-20241022",
         "gpt-4o-mini": "claude-3-5-haiku-20241022",
+        "deepseek-v4-pro": "claude-3-5-sonnet-20241022",
     }
 
-    def __init__(self, anthropic_key: str, openai_key: str):
+    def __init__(
+        self,
+        anthropic_key: str = "",
+        openai_key: str = "",
+        deepseek_key: str = "",
+        deepseek_base_url: str = "https://api.deepseek.com/v1",
+    ):
         self._anthropic_key = anthropic_key
         self._openai_key = openai_key
+        self._deepseek_key = deepseek_key
+        self._deepseek_base_url = deepseek_base_url
+
         self._anthropic_client: AsyncAnthropic | None = None
         self._openai_client: AsyncOpenAI | None = None
+        self._deepseek_client: AsyncOpenAI | None = None
 
     @property
     def anthropic_client(self) -> AsyncAnthropic:
@@ -40,11 +51,23 @@ class LLMClient:
             self._openai_client = AsyncOpenAI(api_key=self._openai_key)
         return self._openai_client
 
+    @property
+    def deepseek_client(self) -> AsyncOpenAI:
+        if self._deepseek_client is None:
+            self._deepseek_client = AsyncOpenAI(
+                api_key=self._deepseek_key,
+                base_url=self._deepseek_base_url,
+            )
+        return self._deepseek_client
+
     @staticmethod
     def _get_provider(model: str) -> ModelProvider:
-        """Return ANTHROPIC if model starts with 'claude', else OPENAI."""
-        if model.lower().startswith("claude"):
+        """Return provider based on model name prefix."""
+        model_lower = model.lower()
+        if model_lower.startswith("claude"):
             return ModelProvider.ANTHROPIC
+        if model_lower.startswith("deepseek"):
+            return ModelProvider.DEEPSEEK
         return ModelProvider.OPENAI
 
     async def call(self, prompt: str, config: LLMConfig) -> LLMResponse:
@@ -63,14 +86,16 @@ class LLMClient:
                 try:
                     if provider == ModelProvider.ANTHROPIC:
                         return await self._call_anthropic(prompt, config, model)
+                    elif provider == ModelProvider.DEEPSEEK:
+                        return await self._call_deepseek(prompt, config, model)
                     else:
                         return await self._call_openai(prompt, config, model)
                 except Exception as exc:
                     last_error = exc
                     wait_seconds = 2 ** attempt
                     logger.warning(
-                        "LLM call failed (model=%s, attempt=%d/%d): %s. Retrying in %ds...",
-                        model, attempt + 1, 3, exc, wait_seconds,
+                        "LLM call failed (model=%s, provider=%s, attempt=%d/%d): %s. Retrying in %ds...",
+                        model, provider.value, attempt + 1, 3, exc, wait_seconds,
                     )
                     if attempt < 2:
                         await asyncio.sleep(wait_seconds)
@@ -116,6 +141,37 @@ class LLMClient:
         messages.append({"role": "user", "content": prompt})
 
         response = await self.openai_client.chat.completions.create(
+            model=model,
+            temperature=config.temperature,
+            max_tokens=config.max_tokens,
+            messages=messages,
+        )
+
+        content = ""
+        if response.choices:
+            content = response.choices[0].message.content or ""
+
+        usage = None
+        if response.usage:
+            usage = {
+                "input_tokens": response.usage.prompt_tokens,
+                "output_tokens": response.usage.completion_tokens,
+            }
+
+        return LLMResponse(
+            content=content,
+            model=response.model or model,
+            usage=usage,
+        )
+
+    async def _call_deepseek(self, prompt: str, config: LLMConfig, model: str) -> LLMResponse:
+        """Call DeepSeek API (OpenAI-compatible)."""
+        messages = []
+        if config.system_prompt:
+            messages.append({"role": "system", "content": config.system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        response = await self.deepseek_client.chat.completions.create(
             model=model,
             temperature=config.temperature,
             max_tokens=config.max_tokens,

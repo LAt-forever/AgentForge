@@ -17,10 +17,15 @@ class Settings(BaseSettings):
     # LLM API keys
     anthropic_api_key: str = ""
     openai_api_key: str = ""
+    deepseek_api_key: str = ""
 
     # Model configuration
-    default_model: str = "claude-3-5-sonnet-20241022"
-    fallback_model: str = "gpt-4o"
+    default_model: str = "deepseek-v4-pro"
+    fallback_model: str = "claude-3-5-sonnet-20241022"
+
+    # DeepSeek configuration
+    deepseek_base_url: str = "https://api.deepseek.com/v1"
+    deepseek_model: str = "deepseek-v4-pro"
 
     # Workflow configuration
     max_review_iterations: int = 3
