@@ -14,6 +14,7 @@ from backend.config import settings
 from backend.llm.client import LLMClient
 from backend.core.state_store import StateStore, WorkflowState
 from backend.tools.file_manager import FileManager
+from backend.tools.code_runner import CodeRunner
 from backend.orchestrator.state_machine import StateMachine
 from backend.orchestrator.websocket_manager import WebSocketManager
 from backend.orchestrator.scheduler import AgentScheduler
@@ -37,6 +38,8 @@ async def lifespan(app: FastAPI):
         openai_key=settings.openai_api_key,
         deepseek_key=settings.deepseek_api_key,
         deepseek_base_url=settings.deepseek_base_url,
+        glm_key=settings.glm_api_key,
+        glm_base_url=settings.glm_base_url,
     )
     state_store = StateStore(base_dir=os.path.join(settings.output_dir, "states"))
     ws_manager = WebSocketManager()
@@ -183,12 +186,44 @@ async def _run_workflow(project_id: str, requirement: str):
 
         # Review loop
         review_passed = False
+        code_runner = CodeRunner(timeout=settings.code_execution_timeout)
         while not review_passed:
             coder_output = await scheduler.run_agent("coder", context, project_id)
             context.code = coder_output.files
 
             for filepath, content in coder_output.files.items():
                 fm.write_file(filepath, content)
+
+            # --- Syntax validation before review ---
+            syntax_errors = []
+            for filepath, content in coder_output.files.items():
+                language = code_runner.detect_language(filepath)
+                if language:
+                    is_valid, error = code_runner.validate_syntax(content, language)
+                    if not is_valid:
+                        syntax_errors.append(f"{filepath}: {error}")
+
+            if syntax_errors:
+                logger.warning("Syntax errors found in iteration %d: %s", sm._review_count, syntax_errors)
+                if sm.can_iterate():
+                    context.review_feedback = (
+                        "The generated code has syntax errors. Please fix them before review.\n\n"
+                        + "\n".join(syntax_errors)
+                    )
+                    context.iteration = sm._review_count
+                    state_store.increment_iteration(project_id)
+                    # Stay in CODING state, skip reviewer for this round
+                    await ws_manager.send_message(project_id, {
+                        "type": "agent_status",
+                        "project_id": project_id,
+                        "agent": "coder",
+                        "status": "running",
+                        "output": {"summary": f"Fixing {len(syntax_errors)} syntax error(s)..."},
+                    })
+                    continue
+                else:
+                    # Out of iterations; proceed to reviewer for final assessment
+                    pass
 
             sm.transition_to(WorkflowState.REVIEWING)
             state_store.update_state(project_id, WorkflowState.REVIEWING)
@@ -252,4 +287,10 @@ async def _notify_workflow_state(project_id: str, sm: StateMachine):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(
+        "backend.main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        reload_excludes=["output/*", "**/output/*"],
+    )
