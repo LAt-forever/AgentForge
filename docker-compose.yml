@@ -1,0 +1,42 @@
+services:
+  sandbox:
+    build:
+      context: ./sandbox
+      dockerfile: Dockerfile
+    container_name: devagent-sandbox
+    volumes:
+      - ./backend/output:/workspace
+    command: tail -f /dev/null
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/output:/app/output
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - USE_DOCKER_SANDBOX=true
+      - SANDBOX_CONTAINER_NAME=devagent-sandbox
+      - SANDBOX_IMAGE=devagent-sandbox:latest
+      - OUTPUT_DIR=/app/output
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - GLM_API_KEY=${GLM_API_KEY:-}
+    depends_on:
+      - sandbox
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - backend
