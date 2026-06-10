@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from backend.config import settings
 from backend.llm.client import LLMClient
 from backend.core.state_store import StateStore, WorkflowState
+from backend.core.settings_manager import SettingsManager
 from backend.tools.file_manager import FileManager
 from backend.tools.code_runner import CodeRunner
 from backend.tools.git_manager import GitManager
@@ -27,12 +28,13 @@ logger = logging.getLogger(__name__)
 llm_client: LLMClient | None = None
 state_store: StateStore | None = None
 ws_manager: WebSocketManager | None = None
+settings_manager: SettingsManager | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize and clean up global resources."""
-    global llm_client, state_store, ws_manager
+    global llm_client, state_store, ws_manager, settings_manager
 
     llm_client = LLMClient(
         anthropic_key=settings.anthropic_api_key,
@@ -44,6 +46,24 @@ async def lifespan(app: FastAPI):
     )
     state_store = StateStore(base_dir=os.path.join(settings.output_dir, "states"))
     ws_manager = WebSocketManager()
+
+    editable_defaults = {
+        "default_model": settings.default_model,
+        "fallback_model": settings.fallback_model,
+        "max_review_iterations": settings.max_review_iterations,
+        "code_execution_timeout": settings.code_execution_timeout,
+        "default_language": settings.default_language,
+        "use_docker_sandbox": settings.use_docker_sandbox,
+        "anthropic_api_key": settings.anthropic_api_key,
+        "openai_api_key": settings.openai_api_key,
+        "deepseek_api_key": settings.deepseek_api_key,
+        "glm_api_key": settings.glm_api_key,
+    }
+    settings_manager = SettingsManager(
+        os.path.join(settings.output_dir, "settings.json"),
+        defaults=editable_defaults,
+    )
+    _apply_settings(settings_manager.get_all())
 
     logger.info("DevAgent Team API started")
     yield
@@ -173,6 +193,64 @@ async def get_git_diff_commit(project_id: str, commit_hash: str):
 
 
 # ---------------------------------------------------------------------------
+# Settings Endpoints
+# ---------------------------------------------------------------------------
+
+def _apply_settings(values: dict) -> None:
+    """Push editable settings into the live config and rebuild the LLM client."""
+    global llm_client
+    settings.default_model = values["default_model"]
+    settings.fallback_model = values["fallback_model"]
+    settings.max_review_iterations = values["max_review_iterations"]
+    settings.code_execution_timeout = values["code_execution_timeout"]
+    settings.default_language = values["default_language"]
+    settings.use_docker_sandbox = values["use_docker_sandbox"]
+    settings.anthropic_api_key = values["anthropic_api_key"]
+    settings.openai_api_key = values["openai_api_key"]
+    settings.deepseek_api_key = values["deepseek_api_key"]
+    settings.glm_api_key = values["glm_api_key"]
+    llm_client = LLMClient(
+        anthropic_key=settings.anthropic_api_key,
+        openai_key=settings.openai_api_key,
+        deepseek_key=settings.deepseek_api_key,
+        deepseek_base_url=settings.deepseek_base_url,
+        glm_key=settings.glm_api_key,
+        glm_base_url=settings.glm_base_url,
+    )
+
+
+class UpdateSettingsRequest(BaseModel):
+    settings: dict
+
+
+@app.get("/api/settings")
+async def get_settings():
+    """Return editable settings with secrets masked."""
+    return {"settings": settings_manager.get_masked()}
+
+
+@app.get("/api/settings/models")
+async def get_models():
+    """Return available models grouped by provider."""
+    return {
+        "models": {
+            "anthropic": ["claude-3-5-sonnet-20241022"],
+            "openai": ["gpt-4o"],
+            "deepseek": ["deepseek-v4-pro"],
+            "glm": ["glm-4-plus"],
+        }
+    }
+
+
+@app.post("/api/settings")
+async def update_settings(request: UpdateSettingsRequest):
+    """Apply and persist settings changes; rebuild the LLM client."""
+    values = settings_manager.update(request.settings)
+    _apply_settings(values)
+    return {"settings": settings_manager.get_masked()}
+
+
+# ---------------------------------------------------------------------------
 # WebSocket Endpoint
 # ---------------------------------------------------------------------------
 
@@ -200,6 +278,7 @@ async def _run_workflow(project_id: str, requirement: str):
     gm.init_repo(project_id)
     await _send_terminal(project_id, "agent", f"Initialized project {project_id}\n")
     context = AgentContext(requirement=requirement, project_id=project_id)
+    context.language = settings.default_language
 
     try:
         # IDLE -> PLANNING
