@@ -72,3 +72,49 @@ class TestAnalyzePython:
         analyzer = StaticAnalyzer(sandbox)
         issues = analyzer.analyze_python("proj1", ["main.py"])
         assert [i for i in issues if i.tool == "pylint"] == []
+
+
+class TestAnalyzeTypeScript:
+    def test_parses_tsc_output(self):
+        """tsc error output is parsed into Issues."""
+        sandbox = MagicMock()
+        tsc_out = "main.ts(12,5): error TS2304: Cannot find name 'foo'.\n"
+        sandbox.execute.return_value = ExecutionResult(
+            stdout=tsc_out, stderr="", exit_code=2,
+        )
+        analyzer = StaticAnalyzer(sandbox)
+        issues = analyzer.analyze_typescript("proj1", ["main.ts"])
+
+        assert len(issues) == 1
+        assert issues[0].tool == "tsc"
+        assert issues[0].line == 12
+        assert issues[0].column == 5
+        assert issues[0].code == "TS2304"
+        assert issues[0].severity == "error"
+
+    def test_no_ts_files_returns_empty(self):
+        sandbox = MagicMock()
+        analyzer = StaticAnalyzer(sandbox)
+        assert analyzer.analyze_typescript("proj1", []) == []
+        sandbox.execute.assert_not_called()
+
+
+class TestAnalyzeDispatch:
+    def test_dispatch_python(self):
+        sandbox = MagicMock()
+        sandbox.execute.side_effect = [
+            ExecutionResult(stdout="[]", stderr="", exit_code=0),
+            ExecutionResult(stdout="", stderr="", exit_code=0),
+        ]
+        analyzer = StaticAnalyzer(sandbox)
+        analyzer.analyze("p", "python", ["a.py", "b.ts"])
+        # Only the .py file should be passed to pylint
+        first_call_args = sandbox.execute.call_args_list[0][0][1]
+        assert "a.py" in first_call_args
+        assert "b.ts" not in first_call_args
+
+    def test_dispatch_unknown_language(self):
+        sandbox = MagicMock()
+        analyzer = StaticAnalyzer(sandbox)
+        assert analyzer.analyze("p", "rust", ["main.rs"]) == []
+        sandbox.execute.assert_not_called()
