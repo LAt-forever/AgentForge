@@ -73,3 +73,41 @@ class TestStatus:
         git_manager.init_repo("p1")
         status = git_manager.get_status("p1")
         assert "spec.md" in status["untracked"]
+
+
+class TestLogAndDiff:
+    def test_log_newest_first(self, git_manager, temp_output):
+        """get_log returns commits newest-first."""
+        proj_dir = _make_project(temp_output, "p1")
+        git_manager.init_repo("p1")
+        git_manager.commit("p1", "first")
+        with open(os.path.join(proj_dir, "main.py"), "w") as f:
+            f.write("print('hi')\n")
+        git_manager.commit("p1", "second")
+        log = git_manager.get_log("p1")
+        assert [c.message for c in log] == ["second", "first"]
+
+    def test_log_empty_repo(self, git_manager, temp_output):
+        """get_log on a repo with no commits returns empty list."""
+        _make_project(temp_output, "p1")
+        git_manager.init_repo("p1")
+        assert git_manager.get_log("p1") == []
+
+    def test_diff_working_tree(self, git_manager, temp_output):
+        """get_diff(None) shows uncommitted changes against HEAD."""
+        proj_dir = _make_project(temp_output, "p1")
+        git_manager.init_repo("p1")
+        git_manager.commit("p1", "first")
+        with open(os.path.join(proj_dir, "spec.md"), "w") as f:
+            f.write("# Spec\nchanged\n")
+        diff = git_manager.get_diff("p1")
+        assert "changed" in diff
+
+    def test_diff_specific_commit(self, git_manager, temp_output):
+        """get_diff(hash) shows that commit's changes."""
+        _make_project(temp_output, "p1")
+        git_manager.init_repo("p1")
+        git_manager.commit("p1", "first")
+        log = git_manager.get_log("p1")
+        diff = git_manager.get_diff("p1", log[0].hash)
+        assert "spec.md" in diff
