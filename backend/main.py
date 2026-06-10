@@ -15,6 +15,7 @@ from backend.llm.client import LLMClient
 from backend.core.state_store import StateStore, WorkflowState
 from backend.tools.file_manager import FileManager
 from backend.tools.code_runner import CodeRunner
+from backend.tools.git_manager import GitManager
 from backend.orchestrator.state_machine import StateMachine
 from backend.orchestrator.websocket_manager import WebSocketManager
 from backend.orchestrator.scheduler import AgentScheduler
@@ -130,6 +131,45 @@ async def get_project_file(project_id: str, file_path: str):
     if not fm.exists(file_path):
         raise HTTPException(status_code=404, detail=f"File {file_path} not found")
     return {"content": fm.read_file(file_path)}
+
+
+@app.get("/api/projects")
+async def list_projects():
+    """List all projects with metadata for the history view."""
+    return {"projects": state_store.list_projects_detailed()}
+
+
+@app.get("/api/projects/{project_id}/git/log")
+async def get_git_log(project_id: str):
+    """Return commit history for a project."""
+    if state_store.get_project(project_id) is None:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    gm = GitManager(base_dir=settings.output_dir)
+    commits = gm.get_log(project_id)
+    return {
+        "commits": [
+            {"hash": c.hash, "message": c.message, "timestamp": c.timestamp}
+            for c in commits
+        ]
+    }
+
+
+@app.get("/api/projects/{project_id}/git/diff")
+async def get_git_diff_working(project_id: str):
+    """Return the working-tree diff against HEAD."""
+    if state_store.get_project(project_id) is None:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    gm = GitManager(base_dir=settings.output_dir)
+    return {"diff": gm.get_diff(project_id)}
+
+
+@app.get("/api/projects/{project_id}/git/diff/{commit_hash}")
+async def get_git_diff_commit(project_id: str, commit_hash: str):
+    """Return the diff for a specific commit."""
+    if state_store.get_project(project_id) is None:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    gm = GitManager(base_dir=settings.output_dir)
+    return {"diff": gm.get_diff(project_id, commit_hash)}
 
 
 # ---------------------------------------------------------------------------
