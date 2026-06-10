@@ -13,6 +13,7 @@ interface AppState {
   isRunning: boolean;
   terminalLines: TerminalLine[];
   projectList: ProjectSummary[];
+  isSettingsOpen: boolean;
 
   setProject: (project: Project | null) => void;
   setProjectId: (id: string | null) => void;
@@ -26,6 +27,7 @@ interface AppState {
   appendTerminalLine: (line: TerminalLine) => void;
   clearTerminal: () => void;
   setProjectList: (projects: ProjectSummary[]) => void;
+  setSettingsOpen: (open: boolean) => void;
   reset: () => void;
 }
 
@@ -41,6 +43,7 @@ const initialState = {
   isRunning: false,
   terminalLines: [],
   projectList: [],
+  isSettingsOpen: false,
 };
 
 export const useStore = create<AppState>((set) => ({
@@ -77,6 +80,7 @@ export const useStore = create<AppState>((set) => ({
     set((state) => ({ terminalLines: [...state.terminalLines, line].slice(-1000) })),
   clearTerminal: () => set({ terminalLines: [] }),
   setProjectList: (projects) => set({ projectList: projects }),
+  setSettingsOpen: (isSettingsOpen) => set({ isSettingsOpen }),
 
   reset: () => {
     localStorage.removeItem('devagent-project-id');

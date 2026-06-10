@@ -59,3 +59,18 @@ export interface WebSocketMessage {
   project_id: string;
   [key: string]: unknown;
 }
+
+export interface AppSettings {
+  default_model: string;
+  fallback_model: string;
+  max_review_iterations: number;
+  code_execution_timeout: number;
+  default_language: string;
+  use_docker_sandbox: boolean;
+  anthropic_api_key: string;
+  openai_api_key: string;
+  deepseek_api_key: string;
+  glm_api_key: string;
+}
+
+export type ModelsByProvider = Record<string, string[]>;
