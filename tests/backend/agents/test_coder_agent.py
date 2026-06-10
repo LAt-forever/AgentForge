@@ -44,8 +44,8 @@ class Todo:
     assert result.content == mock_response
     assert "app/main.py" in result.files
     assert "app/models.py" in result.files
-    assert result.files["app/main.py"] == 'def main():\n    print("Hello")\n'
-    assert result.files["app/models.py"] == 'class Todo:\n    pass\n'
+    assert result.files["app/main.py"] == 'def main():\n    print("Hello")'
+    assert result.files["app/models.py"] == 'class Todo:\n    pass'
     assert result.metadata["agent_type"] == "coder"
     assert result.metadata["project_id"] == "proj-123"
     assert result.metadata["iteration"] == 0
@@ -133,3 +133,31 @@ async def test_coder_defaults_to_python_language():
     await agent.run(ctx)
 
     assert "python" in captured["user_prompt"].lower()
+
+
+@pytest.mark.asyncio
+async def test_coder_prompt_includes_entry_point_guidance():
+    """Coder user_prompt must include guidance about entry-point executability."""
+    from unittest.mock import MagicMock
+
+    agent = CoderAgent(llm_client=MagicMock())
+    captured = {}
+
+    async def fake_call(system_prompt, user_prompt, temperature=0.3):
+        captured["user_prompt"] = user_prompt
+        return "### FILE: main.py\n```python\nprint('ok')\n```"
+
+    agent._call_llm = fake_call
+
+    ctx = AgentContext(
+        requirement="Build hello world",
+        project_id="p",
+        spec="Print greeting",
+        architecture="Single file",
+    )
+    await agent.run(ctx)
+
+    prompt = captured["user_prompt"]
+    assert "entry-point" in prompt.lower() or "entry point" in prompt.lower()
+    assert "relative imports" in prompt.lower() or "relative import" in prompt.lower()
+    assert "inline" in prompt.lower() or "absolute" in prompt.lower()

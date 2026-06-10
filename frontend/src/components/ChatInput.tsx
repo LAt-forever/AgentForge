@@ -11,8 +11,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSubmit }) => {
   const isRunning = useStore((state) => state.isRunning);
 
   const handleSubmit = useCallback(() => {
+    console.log('[ChatInput] handleSubmit called, requirement:', requirement);
     const trimmed = requirement.trim();
-    if (!trimmed || isRunning) return;
+    console.log('[ChatInput] trimmed:', trimmed, 'isRunning:', isRunning);
+    if (!trimmed || isRunning) {
+      console.log('[ChatInput] blocked: empty or running');
+      return;
+    }
+    console.log('[ChatInput] calling onSubmit with:', trimmed);
     onSubmit(trimmed);
     setRequirement('');
   }, [requirement, isRunning, onSubmit]);

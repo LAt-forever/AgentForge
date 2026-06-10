@@ -65,7 +65,7 @@ export const CodeEditor: React.FC = () => {
       </div>
 
       {/* CodeMirror */}
-      <div style={{ flex: 1, overflow: 'hidden' }}>
+      <div style={{ flex: 1, overflow: 'auto' }}>
         <CodeMirror
           value={fileContent}
           theme={oneDark}

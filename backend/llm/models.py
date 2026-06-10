@@ -8,6 +8,7 @@ class ModelProvider(Enum):
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
     DEEPSEEK = "deepseek"
+    GLM = "glm"
 
 
 @dataclass

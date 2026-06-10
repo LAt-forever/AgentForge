@@ -13,6 +13,7 @@ Generate the complete implementation code. Rules:
 - Add docstrings and comments where helpful
 - Follow standard naming conventions
 - Each file should be self-contained and functional
+- **Entry-point files** (e.g. `main.py`, `app.py`, `index.js`, `index.ts`) must be directly runnable (`python main.py`, `node app.js`, `npx tsx index.ts`) without any package setup.  Do NOT use relative imports (`from .config import ...` or `import .utils`) in entry-point files.  Use absolute imports, inline constants, or `sys.path.insert` instead.
 
 Format your output as follows for each file:
 

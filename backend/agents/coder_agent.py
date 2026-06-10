@@ -18,6 +18,9 @@ class CoderAgent(BaseAgent):
         language = context.language or "python"
         user_prompt_parts = [
             f"Target language: {language}. Generate all code in {language}.",
+            f"IMPORTANT: The entry-point file (e.g. main.py, app.py, index.ts) must be directly executable. "
+            f"Do NOT use relative imports (e.g. `from .config import ...`) in the entry-point file. "
+            f"Use inline constants, absolute imports, or `sys.path` manipulation instead.",
             f"Functional Specification:\n{context.spec}",
             f"\nArchitecture:\n{context.architecture}",
         ]

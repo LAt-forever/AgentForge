@@ -14,13 +14,11 @@ logger = logging.getLogger(__name__)
 class LLMClient:
     """Client for calling LLM APIs with retry and fallback."""
 
-    # Fallback model mapping
+    # Fallback model mapping: primary -> fallback
+    # Only DeepSeek and GLM, no Claude/OpenAI
     _FALLBACK_MODELS = {
-        "claude-3-5-sonnet-20241022": "gpt-4o",
-        "claude-3-5-haiku-20241022": "gpt-4o-mini",
-        "gpt-4o": "claude-3-5-sonnet-20241022",
-        "gpt-4o-mini": "claude-3-5-haiku-20241022",
-        "deepseek-v4-pro": "claude-3-5-sonnet-20241022",
+        "deepseek-v4-pro": "glm-4-plus",
+        "glm-4-plus": "deepseek-v4-pro",
     }
 
     def __init__(
@@ -29,26 +27,37 @@ class LLMClient:
         openai_key: str = "",
         deepseek_key: str = "",
         deepseek_base_url: str = "https://api.deepseek.com/v1",
+        glm_key: str = "",
+        glm_base_url: str = "https://open.bigmodel.cn/api/paas/v4/",
     ):
         self._anthropic_key = anthropic_key
         self._openai_key = openai_key
         self._deepseek_key = deepseek_key
         self._deepseek_base_url = deepseek_base_url
+        self._glm_key = glm_key
+        self._glm_base_url = glm_base_url
 
         self._anthropic_client: AsyncAnthropic | None = None
         self._openai_client: AsyncOpenAI | None = None
         self._deepseek_client: AsyncOpenAI | None = None
+        self._glm_client: AsyncOpenAI | None = None
 
     @property
     def anthropic_client(self) -> AsyncAnthropic:
         if self._anthropic_client is None:
-            self._anthropic_client = AsyncAnthropic(api_key=self._anthropic_key)
+            self._anthropic_client = AsyncAnthropic(
+                api_key=self._anthropic_key,
+                timeout=60.0,
+            )
         return self._anthropic_client
 
     @property
     def openai_client(self) -> AsyncOpenAI:
         if self._openai_client is None:
-            self._openai_client = AsyncOpenAI(api_key=self._openai_key)
+            self._openai_client = AsyncOpenAI(
+                api_key=self._openai_key,
+                timeout=60.0,
+            )
         return self._openai_client
 
     @property
@@ -57,8 +66,19 @@ class LLMClient:
             self._deepseek_client = AsyncOpenAI(
                 api_key=self._deepseek_key,
                 base_url=self._deepseek_base_url,
+                timeout=60.0,
             )
         return self._deepseek_client
+
+    @property
+    def glm_client(self) -> AsyncOpenAI:
+        if self._glm_client is None:
+            self._glm_client = AsyncOpenAI(
+                api_key=self._glm_key,
+                base_url=self._glm_base_url,
+                timeout=60.0,
+            )
+        return self._glm_client
 
     @staticmethod
     def _get_provider(model: str) -> ModelProvider:
@@ -68,6 +88,8 @@ class LLMClient:
             return ModelProvider.ANTHROPIC
         if model_lower.startswith("deepseek"):
             return ModelProvider.DEEPSEEK
+        if model_lower.startswith("glm"):
+            return ModelProvider.GLM
         return ModelProvider.OPENAI
 
     async def call(self, prompt: str, config: LLMConfig) -> LLMResponse:
@@ -88,6 +110,8 @@ class LLMClient:
                         return await self._call_anthropic(prompt, config, model)
                     elif provider == ModelProvider.DEEPSEEK:
                         return await self._call_deepseek(prompt, config, model)
+                    elif provider == ModelProvider.GLM:
+                        return await self._call_glm(prompt, config, model)
                     else:
                         return await self._call_openai(prompt, config, model)
                 except Exception as exc:
@@ -172,6 +196,37 @@ class LLMClient:
         messages.append({"role": "user", "content": prompt})
 
         response = await self.deepseek_client.chat.completions.create(
+            model=model,
+            temperature=config.temperature,
+            max_tokens=config.max_tokens,
+            messages=messages,
+        )
+
+        content = ""
+        if response.choices:
+            content = response.choices[0].message.content or ""
+
+        usage = None
+        if response.usage:
+            usage = {
+                "input_tokens": response.usage.prompt_tokens,
+                "output_tokens": response.usage.completion_tokens,
+            }
+
+        return LLMResponse(
+            content=content,
+            model=response.model or model,
+            usage=usage,
+        )
+
+    async def _call_glm(self, prompt: str, config: LLMConfig, model: str) -> LLMResponse:
+        """Call GLM (Zhipu AI) API (OpenAI-compatible)."""
+        messages = []
+        if config.system_prompt:
+            messages.append({"role": "system", "content": config.system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        response = await self.glm_client.chat.completions.create(
             model=model,
             temperature=config.temperature,
             max_tokens=config.max_tokens,
