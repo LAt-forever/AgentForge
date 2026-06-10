@@ -150,6 +150,41 @@ class TestExecute:
             mock_ensure.assert_called_once()
 
 
+class TestExecuteDegradesWithoutDocker:
+    """execute() must not raise when Docker is unavailable; it degrades."""
+
+    @patch("subprocess.run")
+    def test_docker_daemon_down_returns_error_result(self, mock_run):
+        """Daemon down: inspect non-zero, run fails -> graceful error result."""
+        mock_run.side_effect = [
+            MagicMock(returncode=1, stderr="Cannot connect to the Docker daemon"),
+            subprocess.CalledProcessError(125, ["docker", "run"], stderr="daemon down"),
+        ]
+        ds = DockerSandbox()
+        result = ds.execute("proj1", ["python", "-c", "print(1)"])
+        assert result.exit_code != 0
+        assert "sandbox" in result.stderr.lower() or "docker" in result.stderr.lower()
+
+    @patch("subprocess.run")
+    def test_docker_binary_missing_returns_error_result(self, mock_run):
+        """docker binary not installed: FileNotFoundError -> graceful error result."""
+        mock_run.side_effect = FileNotFoundError("No such file or directory: 'docker'")
+        ds = DockerSandbox()
+        result = ds.execute("proj1", ["python", "-c", "print(1)"])
+        assert result.exit_code != 0
+        assert "sandbox" in result.stderr.lower() or "docker" in result.stderr.lower()
+
+    @patch("subprocess.run")
+    def test_validate_syntax_degrades_without_docker(self, mock_run):
+        """validate_syntax returns a non-fatal result when sandbox is unavailable."""
+        mock_run.side_effect = FileNotFoundError("docker missing")
+        ds = DockerSandbox()
+        is_valid, error = ds.validate_syntax("print('ok')", "python")
+        # Degraded mode: do not block the pipeline with a false syntax failure
+        assert is_valid is True
+        assert error is None
+
+
 class TestValidateSyntax:
     """Test syntax validation."""
 

@@ -18,6 +18,10 @@ class ExecutionResult:
     exit_code: int
 
 
+class SandboxUnavailableError(RuntimeError):
+    """Raised when the Docker sandbox cannot be reached or started."""
+
+
 class DockerSandbox:
     """Manages a long-running Docker sandbox container for code execution."""
 
@@ -32,46 +36,56 @@ class DockerSandbox:
         self.workspace = workspace
 
     def _ensure_container(self) -> None:
-        """Check if container exists and is running; create/start if needed."""
-        result = subprocess.run(
-            ["docker", "inspect", "-f", "{{.State.Status}}", self.container_name],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            # Container does not exist — create it
-            logger.info(
-                "Container %s does not exist, creating it", self.container_name
-            )
-            subprocess.run(
-                [
-                    "docker",
-                    "run",
-                    "-d",
-                    "--name",
-                    self.container_name,
-                    "-v",
-                    f"{self._host_workspace}:{self.workspace}",
-                    self.image,
-                    "tail",
-                    "-f",
-                    "/dev/null",
-                ],
-                capture_output=True,
-                check=True,
-            )
-            return
+        """Check if container exists and is running; create/start if needed.
 
-        status = result.stdout.strip()
-        if status != "running":
-            logger.info(
-                "Container %s is %s, starting it", self.container_name, status
-            )
-            subprocess.run(
-                ["docker", "start", self.container_name],
+        Raises:
+            SandboxUnavailableError: if Docker is not installed, the daemon is
+                down, or the container cannot be created/started.
+        """
+        try:
+            result = subprocess.run(
+                ["docker", "inspect", "-f", "{{.State.Status}}", self.container_name],
                 capture_output=True,
-                check=True,
+                text=True,
             )
+            if result.returncode != 0:
+                # Container does not exist — create it
+                logger.info(
+                    "Container %s does not exist, creating it", self.container_name
+                )
+                subprocess.run(
+                    [
+                        "docker",
+                        "run",
+                        "-d",
+                        "--name",
+                        self.container_name,
+                        "-v",
+                        f"{self._host_workspace}:{self.workspace}",
+                        self.image,
+                        "tail",
+                        "-f",
+                        "/dev/null",
+                    ],
+                    capture_output=True,
+                    check=True,
+                )
+                return
+
+            status = result.stdout.strip()
+            if status != "running":
+                logger.info(
+                    "Container %s is %s, starting it", self.container_name, status
+                )
+                subprocess.run(
+                    ["docker", "start", self.container_name],
+                    capture_output=True,
+                    check=True,
+                )
+        except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+            raise SandboxUnavailableError(
+                f"Docker sandbox unavailable: {exc}"
+            ) from exc
 
     @property
     def _host_workspace(self) -> str:
@@ -92,9 +106,15 @@ class DockerSandbox:
             timeout: Maximum execution time in seconds
 
         Returns:
-            ExecutionResult with stdout, stderr, and exit code
+            ExecutionResult with stdout, stderr, and exit code. If the sandbox
+            is unavailable, returns an error result (exit_code=-2) instead of
+            raising, so callers can degrade gracefully.
         """
-        self._ensure_container()
+        try:
+            self._ensure_container()
+        except SandboxUnavailableError as exc:
+            logger.warning("Sandbox unavailable for %s: %s", project_id, exc)
+            return ExecutionResult(stdout="", stderr=str(exc), exit_code=-2)
 
         workdir = f"{self.workspace}/{project_id}"
         docker_cmd = [
@@ -136,9 +156,15 @@ class DockerSandbox:
             language: Programming language ("python", "typescript", or "javascript")
 
         Returns:
-            (is_valid, error_message). error_message is None if valid.
+            (is_valid, error_message). error_message is None if valid. If the
+            sandbox is unavailable, returns (True, None) so a missing sandbox
+            does not block the pipeline with a false syntax failure.
         """
-        self._ensure_container()
+        try:
+            self._ensure_container()
+        except SandboxUnavailableError as exc:
+            logger.warning("Sandbox unavailable, skipping syntax check: %s", exc)
+            return True, None
 
         # Create temp file with appropriate extension
         ext_map = {
