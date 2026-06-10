@@ -4,6 +4,7 @@ interface LayoutProps {
   sidebar: React.ReactNode;
   editor: React.ReactNode;
   agentPanel: React.ReactNode;
+  terminal?: React.ReactNode;
 }
 
 const headerStyle: React.CSSProperties = {
@@ -23,7 +24,7 @@ const contentStyle: React.CSSProperties = {
   overflow: 'auto',
 };
 
-export const Layout: React.FC<LayoutProps> = ({ sidebar, editor, agentPanel }) => {
+export const Layout: React.FC<LayoutProps> = ({ sidebar, editor, agentPanel, terminal }) => {
   return (
     <div
       style={{
@@ -62,6 +63,22 @@ export const Layout: React.FC<LayoutProps> = ({ sidebar, editor, agentPanel }) =
           <span style={{ color: 'var(--text-secondary)' }}>Code Editor</span>
         </div>
         <div style={contentStyle}>{editor}</div>
+        {terminal && (
+          <div
+            style={{
+              height: '180px',
+              flexShrink: 0,
+              borderTop: '1px solid var(--border-color)',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <div style={{ ...headerStyle, height: '32px', fontSize: '12px' }}>
+              <span style={{ color: 'var(--text-secondary)' }}>Terminal</span>
+            </div>
+            <div style={{ flex: 1, overflow: 'hidden' }}>{terminal}</div>
+          </div>
+        )}
       </div>
 
       {/* AgentPanel (right) */}

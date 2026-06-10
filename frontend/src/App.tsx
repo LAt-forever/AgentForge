@@ -4,19 +4,32 @@ import { FileTree } from './components/FileTree';
 import { CodeEditor } from './components/CodeEditor';
 import { AgentPanel } from './components/AgentPanel';
 import { ChatInput } from './components/ChatInput';
-import { useStore } from './store/useStore';
+import { TerminalPanel } from './components/TerminalPanel';
+import { ProjectHistory } from './components/ProjectHistory';
+import { useStore, getSavedProjectId } from './store/useStore';
 import { useWebSocket } from './hooks/useWebSocket';
 
 export default function App() {
   const { connect } = useWebSocket();
 
   const projectId = useStore((state) => state.projectId);
+
+  // Restore project from localStorage on mount
+  useEffect(() => {
+    const savedId = getSavedProjectId();
+    if (savedId && !projectId) {
+      setProjectId(savedId);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const currentFile = useStore((state) => state.currentFile);
   const setFileContent = useStore((state) => state.setFileContent);
   const setFiles = useStore((state) => state.setFiles);
   const setProjectId = useStore((state) => state.setProjectId);
   const setProject = useStore((state) => state.setProject);
   const setRunning = useStore((state) => state.setRunning);
+  const setProjectList = useStore((state) => state.setProjectList);
+  const clearTerminal = useStore((state) => state.clearTerminal);
   const reset = useStore((state) => state.reset);
 
   const filePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -24,10 +37,12 @@ export default function App() {
   // Handle submit: create project and start workflow
   const handleSubmit = useCallback(
     async (requirement: string) => {
+      console.log('[App] handleSubmit called with:', requirement);
       reset();
       setRunning(true);
 
       try {
+        console.log('[App] fetching /api/projects...');
         const res = await fetch('/api/projects', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -68,23 +83,91 @@ export default function App() {
     [reset, setRunning, setProjectId, setProject, connect]
   );
 
+  // Effect: fetch project list on mount and when active project changes
+  useEffect(() => {
+    fetch('/api/projects')
+      .then((res) => (res.ok ? res.json() : { projects: [] }))
+      .then((data) => setProjectList(data.projects ?? []))
+      .catch((err) => console.error('Failed to fetch project list:', err));
+  }, [projectId, setProjectList]);
+
+  // Handle switching to a different project from the history list
+  const handleSelectProject = useCallback(
+    (id: string) => {
+      if (id === projectId) return;
+      clearTerminal();
+      setProjectId(id);
+      setTimeout(() => connect(), 0);
+      fetch(`/api/projects/${id}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data) {
+            setProject({
+              project_id: data.project_id,
+              state: data.state,
+              agent_statuses: data.agent_statuses || {},
+              iteration_count: data.iteration_count || 0,
+              outputs: data.outputs || {},
+            });
+            setRunning(data.state !== 'done');
+          }
+        })
+        .catch((err) => console.error('Failed to load project:', err));
+    },
+    [projectId, clearTerminal, setProjectId, connect, setProject, setRunning]
+  );
+
   // Effect: fetch file content when currentFile changes
   useEffect(() => {
     if (!projectId || !currentFile) return;
-
     fetch(`/api/projects/${projectId}/files/${currentFile}`)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-        return res.text();
+        return res.json() as Promise<{ content: string }>;
       })
-      .then((content) => {
-        setFileContent(content);
+      .then((data) => {
+        setFileContent(data.content);
       })
       .catch((err) => {
         console.error('Failed to fetch file content:', err);
         setFileContent('');
       });
   }, [projectId, currentFile, setFileContent]);
+
+  // Effect: on mount, if projectId exists (from localStorage restore), reconnect and fetch files
+  useEffect(() => {
+    if (!projectId) return;
+
+    // Reconnect WebSocket
+    setTimeout(() => {
+      connect();
+    }, 100);
+
+    // Fetch project status
+    fetch(`/api/projects/${projectId}`)
+      .then((res) => {
+        if (!res.ok) return null;
+        return res.json();
+      })
+      .then((data) => {
+        if (data) {
+          setProject({
+            project_id: data.project_id,
+            state: data.state,
+            agent_statuses: data.agent_statuses || {},
+            iteration_count: data.iteration_count || 0,
+            outputs: data.outputs || {},
+          });
+          if (data.state === 'done') {
+            setRunning(false);
+          }
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to fetch project status:', err);
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only on mount
 
   // Effect: poll file list every 2s when projectId exists
   useEffect(() => {
@@ -100,8 +183,8 @@ export default function App() {
       try {
         const res = await fetch(`/api/projects/${projectId}/files`);
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-        const files = (await res.json()) as string[];
-        setFiles(files);
+        const data = await res.json() as { files: string[] };
+        setFiles(data.files);
       } catch (err) {
         console.error('Failed to poll files:', err);
       }
@@ -124,6 +207,7 @@ export default function App() {
   // Sidebar content: FileTree + ChatInput
   const sidebar = (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <ProjectHistory onSelect={handleSelectProject} />
       <div style={{ flex: 1, overflow: 'auto' }}>
         <FileTree />
       </div>
@@ -136,6 +220,7 @@ export default function App() {
       sidebar={sidebar}
       editor={<CodeEditor />}
       agentPanel={<AgentPanel />}
+      terminal={<TerminalPanel />}
     />
   );
 }
