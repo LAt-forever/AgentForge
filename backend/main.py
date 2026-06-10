@@ -196,6 +196,9 @@ async def _run_workflow(project_id: str, requirement: str):
     scheduler = AgentScheduler(llm_client, ws_manager, state_store)
     sm = StateMachine(max_iterations=settings.max_review_iterations)
     fm = FileManager(base_dir=os.path.join(settings.output_dir, project_id))
+    gm = GitManager(base_dir=settings.output_dir)
+    gm.init_repo(project_id)
+    await _send_terminal(project_id, "agent", f"Initialized project {project_id}\n")
     context = AgentContext(requirement=requirement, project_id=project_id)
 
     try:
@@ -208,6 +211,8 @@ async def _run_workflow(project_id: str, requirement: str):
         context.spec = pm_output.content
         fm.write_file("spec.md", pm_output.content)
         state_store.update_output(project_id, "spec", pm_output.content)
+        gm.commit(project_id, "spec: add functional specification")
+        await _send_terminal(project_id, "agent", "PM Agent completed: spec.md committed\n")
 
         # PLANNING -> DESIGNING
         sm.transition_to(WorkflowState.DESIGNING)
@@ -218,6 +223,8 @@ async def _run_workflow(project_id: str, requirement: str):
         context.architecture = architect_output.content
         fm.write_file("architecture.md", architect_output.content)
         state_store.update_output(project_id, "architecture", architect_output.content)
+        gm.commit(project_id, "arch: add system architecture")
+        await _send_terminal(project_id, "agent", "Architect Agent completed: architecture.md committed\n")
 
         # DESIGNING -> CODING (first pass)
         sm.transition_to(WorkflowState.CODING)
@@ -234,6 +241,12 @@ async def _run_workflow(project_id: str, requirement: str):
             for filepath, content in coder_output.files.items():
                 fm.write_file(filepath, content)
 
+            gm.commit(project_id, f"coder: iteration {sm._review_count}")
+            await _send_terminal(
+                project_id, "agent",
+                f"Coder Agent wrote {len(coder_output.files)} file(s)\n",
+            )
+
             # --- Syntax validation before review ---
             syntax_errors = []
             for filepath, content in coder_output.files.items():
@@ -245,6 +258,8 @@ async def _run_workflow(project_id: str, requirement: str):
 
             if syntax_errors:
                 logger.warning("Syntax errors found in iteration %d: %s", sm._review_count, syntax_errors)
+                for err in syntax_errors:
+                    await _send_terminal(project_id, "stderr", err + "\n")
                 if sm.can_iterate():
                     context.review_feedback = (
                         "The generated code has syntax errors. Please fix them before review.\n\n"
@@ -274,6 +289,8 @@ async def _run_workflow(project_id: str, requirement: str):
 
             fm.write_file("review.md", reviewer_output.content)
             state_store.update_output(project_id, "review", reviewer_output.content)
+            gm.commit(project_id, "review: add review report")
+            await _send_terminal(project_id, "agent", "Reviewer Agent completed\n")
 
             if not review_passed and sm.can_iterate():
                 context.review_feedback = reviewer_output.content
@@ -301,6 +318,16 @@ async def _run_workflow(project_id: str, requirement: str):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+async def _send_terminal(project_id: str, stream: str, content: str):
+    """Send a terminal output line to the frontend."""
+    await ws_manager.send_message(project_id, {
+        "type": "terminal_output",
+        "project_id": project_id,
+        "stream": stream,  # "stdout" | "stderr" | "agent"
+        "content": content,
+    })
+
 
 async def _notify_workflow_state(project_id: str, sm: StateMachine):
     """Send workflow state update via WebSocket."""
