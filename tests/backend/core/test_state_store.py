@@ -101,6 +101,36 @@ class TestListProjects:
         assert sorted(projects) == ["proj_a", "proj_b"]
 
 
+class TestListProjectsDetailed:
+    """Test detailed project listing for the history UI."""
+
+    def test_list_projects_detailed(self, state_store):
+        """Detailed listing returns metadata for each project."""
+        state_store.create_project("p1", "build a calculator")
+        state_store.create_project("p2", "build a todo app")
+        state_store.update_state("p2", WorkflowState.DONE)
+
+        detailed = state_store.list_projects_detailed()
+
+        assert len(detailed) == 2
+        by_id = {d["project_id"]: d for d in detailed}
+        assert by_id["p1"]["requirement"] == "build a calculator"
+        assert by_id["p1"]["state"] == "idle"
+        assert by_id["p2"]["state"] == "done"
+        assert "updated_at" in by_id["p1"]
+        assert "requirement_preview" in by_id["p1"]
+
+    def test_list_projects_detailed_sorted_newest_first(self, state_store):
+        """Detailed listing is sorted by updated_at, newest first."""
+        state_store.create_project("old", "first")
+        state_store.create_project("new", "second")
+        # Force a newer updated_at on "new"
+        state_store.update_output("new", "spec", "x")
+
+        detailed = state_store.list_projects_detailed()
+        assert detailed[0]["project_id"] == "new"
+
+
 class TestIncrementIteration:
     """Test incrementing iteration count."""
 

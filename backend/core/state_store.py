@@ -144,3 +144,22 @@ class StateStore:
     def list_projects(self) -> list[str]:
         """List all project IDs in the store."""
         return list(self._cache.keys())
+
+    def list_projects_detailed(self) -> list[dict]:
+        """List all projects with metadata, newest-updated first."""
+        projects = []
+        for project in self._cache.values():
+            requirement = project.requirement
+            projects.append(
+                {
+                    "project_id": project.id,
+                    "state": project.state.value,
+                    "requirement": requirement,
+                    "requirement_preview": requirement[:50],
+                    "iteration_count": project.iteration_count,
+                    "created_at": project.created_at,
+                    "updated_at": project.updated_at,
+                }
+            )
+        projects.sort(key=lambda p: p["updated_at"], reverse=True)
+        return projects
