@@ -2,9 +2,12 @@
 
 import os
 import tempfile
+from unittest.mock import patch, MagicMock
+
 import pytest
 
 from backend.tools.code_runner import CodeRunner
+from backend.tools.docker_sandbox import ExecutionResult
 
 
 @pytest.fixture
@@ -28,6 +31,66 @@ class TestValidateSyntax:
         is_valid, error = runner.validate_syntax(code)
         assert is_valid is False
         assert error != ""
+
+    def test_validate_syntax_with_language(self, runner):
+        """Can pass language explicitly."""
+        code = "x = 1 + 2\nprint(x)"
+        is_valid, error = runner.validate_syntax(code, language="python")
+        assert is_valid is True
+
+    @patch("backend.tools.code_runner.settings")
+    @patch("backend.tools.docker_sandbox.DockerSandbox")
+    def test_validate_syntax_docker_mode(self, mock_docker_cls, mock_settings):
+        """When Docker mode enabled, delegate to DockerSandbox."""
+        mock_settings.use_docker_sandbox = True
+        mock_docker = MagicMock()
+        mock_docker.validate_syntax.return_value = (True, None)
+        mock_docker_cls.return_value = mock_docker
+
+        runner = CodeRunner()
+        is_valid, error = runner.validate_syntax("print('hello')", language="python")
+
+        assert is_valid is True
+        assert error is None
+        mock_docker.validate_syntax.assert_called_once_with("print('hello')", "python")
+
+    @patch("backend.tools.code_runner.settings")
+    def test_validate_typescript_local_fallback(self, mock_settings):
+        """TypeScript in local mode returns True (no validation available)."""
+        mock_settings.use_docker_sandbox = False
+        runner = CodeRunner()
+        is_valid, error = runner.validate_syntax("const x = 1;", language="typescript")
+        assert is_valid is True
+        assert error is None
+
+    def test_validate_unsupported_language(self, runner):
+        """Unsupported language raises ValueError."""
+        with pytest.raises(ValueError, match="Unsupported language"):
+            runner.validate_syntax("code", language="rust")
+
+
+class TestDetectLanguage:
+    """Test language detection from file extension."""
+
+    def test_detect_python(self, runner):
+        """.py files are Python."""
+        assert runner.detect_language("main.py") == "python"
+
+    def test_detect_typescript(self, runner):
+        """.ts files are TypeScript."""
+        assert runner.detect_language("main.ts") == "typescript"
+
+    def test_detect_javascript(self, runner):
+        """.js files are JavaScript."""
+        assert runner.detect_language("main.js") == "javascript"
+
+    def test_detect_unknown(self, runner):
+        """Unknown extensions return None."""
+        assert runner.detect_language("main.rs") is None
+
+    def test_detect_nested_path(self, runner):
+        """Works with nested paths."""
+        assert runner.detect_language("src/utils/helpers.py") == "python"
 
 
 class TestRunCode:
@@ -59,3 +122,32 @@ class TestRunCode:
             assert returncode == 0
         finally:
             os.unlink(temp_path)
+
+    @patch("backend.tools.code_runner.settings")
+    @patch("backend.tools.docker_sandbox.DockerSandbox")
+    def test_run_code_docker_mode(self, mock_docker_cls, mock_settings):
+        """Run code in Docker when enabled."""
+        mock_settings.use_docker_sandbox = True
+        mock_docker = MagicMock()
+        mock_docker.execute.return_value = ExecutionResult(
+            stdout="hello\n", stderr="", exit_code=0,
+        )
+        mock_docker_cls.return_value = mock_docker
+
+        runner = CodeRunner()
+        stdout, stderr, rc = runner.run_code(
+            "print('hello')", project_id="proj1", language="python"
+        )
+
+        assert stdout == "hello\n"
+        assert rc == 0
+        mock_docker.execute.assert_called_once()
+
+    @patch("backend.tools.code_runner.settings")
+    def test_run_code_local_fallback_when_no_project_id(self, mock_settings):
+        """Without project_id, always use local execution."""
+        mock_settings.use_docker_sandbox = True
+        runner = CodeRunner()
+        stdout, stderr, rc = runner.run_code("print('hello')")
+        assert "hello" in stdout
+        assert rc == 0
