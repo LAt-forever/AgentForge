@@ -40,3 +40,13 @@ def test_docker_sandbox_from_env(monkeypatch):
     assert settings.use_docker_sandbox is True
     assert settings.sandbox_container_name == "my-sandbox"
     assert settings.sandbox_image == "custom-image:tag"
+
+
+def test_default_language_default():
+    """default_language defaults to python."""
+    assert Settings().default_language == "python"
+
+
+def test_default_language_from_env(monkeypatch):
+    monkeypatch.setenv("DEFAULT_LANGUAGE", "typescript")
+    assert Settings().default_language == "typescript"

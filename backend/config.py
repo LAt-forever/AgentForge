@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     sandbox_image: str = "devagent-sandbox:latest"
     sandbox_workspace: str = "/workspace"
 
+    # Code generation
+    default_language: str = "python"
+
 
 # Global settings instance
 settings = Settings()
