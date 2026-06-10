@@ -1,4 +1,6 @@
 import React from 'react';
+import { useStore } from '../store/useStore';
+import { SettingsPanel } from './SettingsPanel';
 
 interface LayoutProps {
   sidebar: React.ReactNode;
@@ -44,8 +46,15 @@ export const Layout: React.FC<LayoutProps> = ({ sidebar, editor, agentPanel, ter
           flexDirection: 'column',
         }}
       >
-        <div style={headerStyle}>
+        <div style={{ ...headerStyle, justifyContent: 'space-between' }}>
           <span style={{ color: 'var(--accent-blue)' }}>🤖 DevAgent</span>
+          <button
+            onClick={() => useStore.getState().setSettingsOpen(true)}
+            style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: 16 }}
+            title="Settings"
+          >
+            ⚙️
+          </button>
         </div>
         <div style={contentStyle}>{sidebar}</div>
       </div>
@@ -96,6 +105,8 @@ export const Layout: React.FC<LayoutProps> = ({ sidebar, editor, agentPanel, ter
         </div>
         <div style={contentStyle}>{agentPanel}</div>
       </div>
+
+      <SettingsPanel />
     </div>
   );
 };

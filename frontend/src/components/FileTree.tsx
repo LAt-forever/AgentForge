@@ -3,7 +3,8 @@ import { useStore } from '../store/useStore';
 
 function getFileIcon(filename: string): string {
   if (filename.endsWith('.py')) return '🐍';
-  if (filename.endsWith('.js') || filename.endsWith('.ts') || filename.endsWith('.tsx')) return '📜';
+  if (filename.endsWith('.ts') || filename.endsWith('.tsx')) return '📘';
+  if (filename.endsWith('.js')) return '📙';
   if (filename.endsWith('.json')) return '📋';
   if (filename.endsWith('.md')) return '📝';
   if (filename.endsWith('.html')) return '🌐';
