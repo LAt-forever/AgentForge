@@ -4,6 +4,7 @@ import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
+from backend.config import settings
 from backend.llm.client import LLMClient
 from backend.llm.models import LLMConfig
 
@@ -19,6 +20,7 @@ class AgentContext:
     code: dict = field(default_factory=dict)  # Coder Agent output: {filepath: content}
     review_feedback: str = ""  # Reviewer Agent output (for iteration)
     iteration: int = 0
+    language: str = "python"  # target code generation language
 
 
 @dataclass
@@ -83,7 +85,7 @@ class BaseAgent(ABC):
             The LLM response content.
         """
         config = LLMConfig(
-            model=model or "claude-3-5-sonnet-20241022",
+            model=model or settings.default_model,
             temperature=temperature,
             max_tokens=4096,
             system_prompt=system_prompt,

@@ -91,3 +91,45 @@ def main():
     assert "Add error handling to the main function." in user_prompt
     assert "Iteration: 1" in user_prompt
     assert result.metadata["iteration"] == 1
+
+
+@pytest.mark.asyncio
+async def test_coder_injects_language_directive():
+    """Coder includes the target language in the user prompt."""
+    from unittest.mock import MagicMock
+
+    agent = CoderAgent(llm_client=MagicMock())
+    captured = {}
+
+    async def fake_call(system_prompt, user_prompt, temperature=0.3):
+        captured["user_prompt"] = user_prompt
+        return "### FILE: main.ts\n```typescript\nconst x = 1;\n```"
+
+    agent._call_llm = fake_call
+
+    ctx = AgentContext(
+        requirement="r", project_id="p", spec="s", architecture="a", language="typescript"
+    )
+    await agent.run(ctx)
+
+    assert "typescript" in captured["user_prompt"].lower()
+
+
+@pytest.mark.asyncio
+async def test_coder_defaults_to_python_language():
+    """When no language is set on context, defaults to python directive."""
+    from unittest.mock import MagicMock
+
+    agent = CoderAgent(llm_client=MagicMock())
+    captured = {}
+
+    async def fake_call(system_prompt, user_prompt, temperature=0.3):
+        captured["user_prompt"] = user_prompt
+        return "### FILE: main.py\n```python\nx = 1\n```"
+
+    agent._call_llm = fake_call
+
+    ctx = AgentContext(requirement="r", project_id="p", spec="s", architecture="a")
+    await agent.run(ctx)
+
+    assert "python" in captured["user_prompt"].lower()

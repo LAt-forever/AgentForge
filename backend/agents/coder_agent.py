@@ -15,7 +15,9 @@ class CoderAgent(BaseAgent):
     async def run(self, context: AgentContext) -> AgentOutput:
         """Generate code from spec and architecture."""
         system_prompt = self._load_prompt("coder")
+        language = context.language or "python"
         user_prompt_parts = [
+            f"Target language: {language}. Generate all code in {language}.",
             f"Functional Specification:\n{context.spec}",
             f"\nArchitecture:\n{context.architecture}",
         ]
@@ -54,28 +56,64 @@ class CoderAgent(BaseAgent):
     def _parse_files(self, code_response: str) -> dict:
         """Parse code files from LLM response.
 
-        Pattern: ### FILE: <filepath>\n```<lang>\n<content>```
-        Fallback: ```<lang>\n<content>``` named as file_1.py, file_2.py, etc.
+        Supports multiple output formats from different LLMs:
+        - ### FILE: <filepath>\n```<lang>\n<content>```
+        - ### FILE: <filepath>\n```\n<content>```
+        - ```<lang>:<filepath>\n<content>```
+        - Filename as markdown heading + code block
         """
         files = {}
 
-        # Primary pattern: ### FILE: filepath
-        pattern = r'###\s*FILE:\s*([^\n]+)\n```(?:\w+)?\n(.*?)```'
-        matches = list(re.finditer(pattern, code_response, re.DOTALL))
+        # Pattern 1: ### FILE: filepath followed by ``` or ```lang
+        # Allow optional blank lines between FILE and code block
+        pattern1 = r'###\s*FILE:\s*([^\n]+)(?:\n+|\r?\n)```(?:\w+)?\n(.*?)```'
+        matches = list(re.finditer(pattern1, code_response, re.DOTALL))
 
         if matches:
             for match in matches:
+                filepath = match.group(1).strip().strip('`')
+                content = match.group(2).rstrip()
+                if filepath and content:
+                    files[filepath] = content
+            return files
+
+        # Pattern 2: filename on its own line before code block
+        # e.g. "hello_world.py\n```python\n...\n```"
+        pattern2 = r'^([\w./_-]+\.pyw?)$\r?\n```(?:\w+)?\n(.*?)```'
+        matches = list(re.finditer(pattern2, code_response, re.MULTILINE | re.DOTALL))
+        if matches:
+            for match in matches:
                 filepath = match.group(1).strip()
-                content = match.group(2)
-                files[filepath] = content
-        else:
-            # Fallback pattern: just code blocks without FILE markers
-            fallback_pattern = r'```(?:\w+)?\n(.*?)```'
-            fallback_matches = list(
-                re.finditer(fallback_pattern, code_response, re.DOTALL)
-            )
-            for i, match in enumerate(fallback_matches, start=1):
-                content = match.group(1)
-                files[f"file_{i}.py"] = content
+                content = match.group(2).rstrip()
+                if filepath and content:
+                    files[filepath] = content
+            return files
+
+        # Pattern 3: code blocks with filepath in language tag
+        # e.g. ```python:hello_world.py\n...\n```
+        pattern3 = r'```\w+:(\S+)\n(.*?)```'
+        matches = list(re.finditer(pattern3, code_response, re.DOTALL))
+        if matches:
+            for match in matches:
+                filepath = match.group(1).strip()
+                content = match.group(2).rstrip()
+                if filepath and content:
+                    files[filepath] = content
+            return files
+
+        # Pattern 4: just code blocks - try to infer filenames
+        pattern4 = r'```(?:\w+)?\n(.*?)```'
+        matches = list(re.finditer(pattern4, code_response, re.DOTALL))
+        for i, match in enumerate(matches, start=1):
+            content = match.group(1)
+            # Look for a filename in the 3 lines before this code block
+            block_start = match.start()
+            preceding = code_response[max(0, block_start - 500):block_start]
+            filename_match = re.search(r'([\w_-]+\.pyw?)[\s`]*$', preceding, re.MULTILINE)
+            if filename_match:
+                filepath = filename_match.group(1).strip()
+            else:
+                filepath = f"file_{i}.py"
+            files[filepath] = content.rstrip()
 
         return files
