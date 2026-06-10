@@ -11,6 +11,7 @@ export function useWebSocket() {
   const setAgentStatus = useStore((state) => state.setAgentStatus);
   const setWorkflowState = useStore((state) => state.setWorkflowState);
   const setRunning = useStore((state) => state.setRunning);
+  const appendTerminalLine = useStore((state) => state.appendTerminalLine);
   const projectId = useStore((state) => state.projectId);
 
   // Keep ref in sync with store
@@ -39,21 +40,31 @@ export function useWebSocket() {
         const message = JSON.parse(event.data) as WebSocketMessage;
 
         if (message.type === 'agent_status') {
-          const status = message.status as Parameters<typeof setAgentStatus>[0];
-          if (status) {
-            setAgentStatus(status);
-          }
+          setAgentStatus({
+            agent: message.agent as string,
+            status: message.status as 'idle' | 'running' | 'completed' | 'failed',
+            progress: 0,
+            output: message.output as Record<string, unknown> | undefined,
+            error: message.error as string | undefined,
+          });
         } else if (message.type === 'workflow_state') {
-          const state = message.state as Parameters<typeof setWorkflowState>[0];
-          if (state) {
-            setWorkflowState(state);
-            if (state.state === 'done') {
-              setRunning(false);
-            }
+          setWorkflowState({
+            project_id: message.project_id as string,
+            state: message.state as 'idle' | 'planning' | 'designing' | 'coding' | 'reviewing' | 'done',
+            overall_progress: message.overall_progress as number,
+            iteration_count: message.iteration_count as number,
+          });
+          if ((message.state as string) === 'done') {
+            setRunning(false);
           }
         } else if (message.type === 'error') {
           console.error('WebSocket error message:', message);
           setRunning(false);
+        } else if (message.type === 'terminal_output') {
+          appendTerminalLine({
+            stream: message.stream as 'stdout' | 'stderr' | 'agent',
+            content: message.content as string,
+          });
         }
       } catch (err) {
         console.error('Failed to parse WebSocket message:', err);
@@ -78,7 +89,7 @@ export function useWebSocket() {
     ws.onerror = (error) => {
       console.error('WebSocket error:', error);
     };
-  }, [setConnected, setAgentStatus, setWorkflowState, setRunning]);
+  }, [setConnected, setAgentStatus, setWorkflowState, setRunning, appendTerminalLine]);
 
   // Clean up on unmount
   useEffect(() => {

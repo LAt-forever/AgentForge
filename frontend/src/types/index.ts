@@ -33,8 +33,29 @@ export interface Project {
   outputs: Record<string, string>;
 }
 
+export interface TerminalLine {
+  stream: 'stdout' | 'stderr' | 'agent';
+  content: string;
+}
+
+export interface ProjectSummary {
+  project_id: string;
+  state: string;
+  requirement: string;
+  requirement_preview: string;
+  iteration_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GitCommit {
+  hash: string;
+  message: string;
+  timestamp: string;
+}
+
 export interface WebSocketMessage {
-  type: 'agent_status' | 'workflow_state' | 'error';
+  type: 'agent_status' | 'workflow_state' | 'error' | 'terminal_output';
   project_id: string;
   [key: string]: unknown;
 }

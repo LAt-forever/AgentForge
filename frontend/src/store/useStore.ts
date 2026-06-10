@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AgentStatus, WorkflowState, Project } from '../types';
+import type { AgentStatus, WorkflowState, Project, TerminalLine, ProjectSummary } from '../types';
 
 interface AppState {
   currentProject: Project | null;
@@ -11,6 +11,8 @@ interface AppState {
   fileContent: string;
   isConnected: boolean;
   isRunning: boolean;
+  terminalLines: TerminalLine[];
+  projectList: ProjectSummary[];
 
   setProject: (project: Project | null) => void;
   setProjectId: (id: string | null) => void;
@@ -21,6 +23,9 @@ interface AppState {
   setFileContent: (content: string) => void;
   setConnected: (connected: boolean) => void;
   setRunning: (running: boolean) => void;
+  appendTerminalLine: (line: TerminalLine) => void;
+  clearTerminal: () => void;
+  setProjectList: (projects: ProjectSummary[]) => void;
   reset: () => void;
 }
 
@@ -34,13 +39,22 @@ const initialState = {
   fileContent: '',
   isConnected: false,
   isRunning: false,
+  terminalLines: [],
+  projectList: [],
 };
 
 export const useStore = create<AppState>((set) => ({
   ...initialState,
 
   setProject: (project) => set({ currentProject: project }),
-  setProjectId: (id) => set({ projectId: id }),
+  setProjectId: (id) => {
+    set({ projectId: id });
+    if (id) {
+      localStorage.setItem('devagent-project-id', id);
+    } else {
+      localStorage.removeItem('devagent-project-id');
+    }
+  },
 
   setAgentStatus: (status) =>
     set((state) => ({
@@ -59,5 +73,18 @@ export const useStore = create<AppState>((set) => ({
   setConnected: (isConnected) => set({ isConnected }),
   setRunning: (isRunning) => set({ isRunning }),
 
-  reset: () => set(initialState),
+  appendTerminalLine: (line) =>
+    set((state) => ({ terminalLines: [...state.terminalLines, line].slice(-1000) })),
+  clearTerminal: () => set({ terminalLines: [] }),
+  setProjectList: (projects) => set({ projectList: projects }),
+
+  reset: () => {
+    localStorage.removeItem('devagent-project-id');
+    set({ ...initialState });
+  },
 }));
+
+// Helper to get saved project ID on app load
+export function getSavedProjectId(): string | null {
+  return localStorage.getItem('devagent-project-id');
+}
