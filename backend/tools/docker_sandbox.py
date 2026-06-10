@@ -215,16 +215,24 @@ class DockerSandbox:
                     ["python", "-m", "py_compile", temp_filename],
                     timeout=10,
                 )
-            elif language in ("typescript", "javascript"):
+            elif language == "javascript":
                 result = self.execute(
                     "_syntax_check",
                     ["node", "--check", temp_filename],
                     timeout=10,
                 )
+            elif language == "typescript":
+                result = self.execute(
+                    "_syntax_check",
+                    ["npx", "tsc", "--noEmit", "--skipLibCheck", "--isolatedModules", temp_filename],
+                    timeout=10,
+                )
 
             if result.exit_code == 0:
                 return True, None
-            return False, result.stderr
+            # tsc writes errors to stdout; node --check writes to stderr
+            error_msg = result.stdout if language == "typescript" and result.stdout else result.stderr
+            return False, error_msg
         finally:
             os.unlink(temp_path)
 
