@@ -38,9 +38,15 @@ class FileManager:
         return os.path.exists(abs_path)
 
     def list_files(self) -> list[str]:
-        """Recursively list all files as relative paths, sorted."""
+        """Recursively list all files as relative paths, sorted.
+
+        Hidden directories (those whose name starts with '.', e.g. '.git')
+        are pruned so VCS internals don't leak into the listing.
+        """
         files = []
-        for root, _dirs, filenames in os.walk(self._base_dir):
+        for root, dirs, filenames in os.walk(self._base_dir):
+            # Prune hidden directories in place so os.walk skips them
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
             for filename in filenames:
                 abs_path = os.path.join(root, filename)
                 rel_path = os.path.relpath(abs_path, self._base_dir)

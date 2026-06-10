@@ -67,6 +67,34 @@ class TestListFiles:
         files = file_manager.list_files()
         assert files == []
 
+    def test_list_files_excludes_git_internals(self, file_manager, temp_dir):
+        """Files under a .git directory are not listed."""
+        import os
+
+        file_manager.write_file("main.py", "print('hi')")
+        # Simulate a git repo's internal files
+        os.makedirs(os.path.join(temp_dir, ".git", "objects"), exist_ok=True)
+        with open(os.path.join(temp_dir, ".git", "HEAD"), "w") as f:
+            f.write("ref: refs/heads/main\n")
+        with open(os.path.join(temp_dir, ".git", "objects", "abc"), "w") as f:
+            f.write("blob")
+
+        files = file_manager.list_files()
+        assert files == ["main.py"]
+        assert not any(f.startswith(".git/") for f in files)
+
+    def test_list_files_excludes_hidden_dirs(self, file_manager, temp_dir):
+        """Files under any dotted directory are not listed."""
+        import os
+
+        file_manager.write_file("app.py", "x = 1")
+        os.makedirs(os.path.join(temp_dir, ".cache"), exist_ok=True)
+        with open(os.path.join(temp_dir, ".cache", "junk"), "w") as f:
+            f.write("noise")
+
+        files = file_manager.list_files()
+        assert files == ["app.py"]
+
 
 class TestFileExists:
     """Test file existence check."""
