@@ -19,3 +19,24 @@ def test_settings_from_env(monkeypatch):
     assert settings.openai_api_key == "test-key-openai"
     assert settings.default_model == "claude-3-5-sonnet-20241022"
     assert settings.max_review_iterations == 5
+
+
+def test_docker_sandbox_defaults():
+    """Docker sandbox settings have sensible defaults."""
+    settings = Settings()
+    assert settings.use_docker_sandbox is False
+    assert settings.sandbox_container_name == "devagent-sandbox"
+    assert settings.sandbox_image == "devagent-sandbox:latest"
+    assert settings.sandbox_workspace == "/workspace"
+
+
+def test_docker_sandbox_from_env(monkeypatch):
+    """Docker sandbox settings can be overridden via environment."""
+    monkeypatch.setenv("USE_DOCKER_SANDBOX", "true")
+    monkeypatch.setenv("SANDBOX_CONTAINER_NAME", "my-sandbox")
+    monkeypatch.setenv("SANDBOX_IMAGE", "custom-image:tag")
+
+    settings = Settings()
+    assert settings.use_docker_sandbox is True
+    assert settings.sandbox_container_name == "my-sandbox"
+    assert settings.sandbox_image == "custom-image:tag"
