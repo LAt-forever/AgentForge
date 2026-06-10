@@ -1,11 +1,12 @@
 """Tests for ReviewerAgent."""
 
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.agents.base_agent import AgentContext
 from backend.agents.reviewer_agent import ReviewerAgent
 from backend.llm.client import LLMClient
+from backend.tools.static_analyzer import Issue
 
 
 @pytest.fixture
@@ -91,3 +92,64 @@ async def test_reviewer_agent_passed(llm_client):
     assert result.metadata["passed"] is True
     assert result.metadata["issues"] == []
     assert result.metadata["summary"] == "All code looks good. No issues found."
+
+
+@pytest.mark.asyncio
+async def test_reviewer_includes_static_analysis_in_prompt(tmp_path, monkeypatch):
+    """When sandbox is on, analyzer issues are injected into the reviewer prompt."""
+    from backend.config import settings
+
+    proj = tmp_path / "proj1"
+    proj.mkdir()
+    (proj / "main.py").write_text("x = 1\n")
+    monkeypatch.setattr(settings, "output_dir", str(tmp_path))
+    monkeypatch.setattr(settings, "use_docker_sandbox", True)
+
+    agent = ReviewerAgent(llm_client=MagicMock())
+    captured = {}
+
+    async def fake_call(system_prompt, user_prompt, temperature=0.3):
+        captured["user_prompt"] = user_prompt
+        return '{"passed": true, "issues": [], "summary": "ok"}'
+
+    agent._call_llm = fake_call
+
+    fake_issue = Issue(
+        tool="pylint", file="main.py", line=1, column=0,
+        severity="warning", message="Constant name doesn't conform", code="C0103",
+    )
+    with patch("backend.agents.reviewer_agent.StaticAnalyzer") as MockAnalyzer:
+        MockAnalyzer.return_value.analyze.return_value = [fake_issue]
+        ctx = AgentContext(requirement="r", project_id="proj1", spec="s", architecture="a")
+        await agent.run(ctx)
+
+    assert "Static analysis" in captured["user_prompt"]
+    assert "C0103" in captured["user_prompt"]
+
+
+@pytest.mark.asyncio
+async def test_reviewer_skips_analysis_when_sandbox_off(tmp_path, monkeypatch):
+    """When sandbox is off, no analyzer call and prompt has no analysis section."""
+    from backend.config import settings
+
+    proj = tmp_path / "proj1"
+    proj.mkdir()
+    (proj / "main.py").write_text("x = 1\n")
+    monkeypatch.setattr(settings, "output_dir", str(tmp_path))
+    monkeypatch.setattr(settings, "use_docker_sandbox", False)
+
+    agent = ReviewerAgent(llm_client=MagicMock())
+    captured = {}
+
+    async def fake_call(system_prompt, user_prompt, temperature=0.3):
+        captured["user_prompt"] = user_prompt
+        return '{"passed": true, "issues": [], "summary": "ok"}'
+
+    agent._call_llm = fake_call
+
+    with patch("backend.agents.reviewer_agent.StaticAnalyzer") as MockAnalyzer:
+        ctx = AgentContext(requirement="r", project_id="proj1", spec="s", architecture="a")
+        await agent.run(ctx)
+        MockAnalyzer.assert_not_called()
+
+    assert "Static analysis" not in captured["user_prompt"]
