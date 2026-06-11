@@ -188,26 +188,32 @@ class DockerSandbox:
             check_dir = f"{self.workspace}/_syntax_check"
             container_path = f"{check_dir}/{temp_filename}"
 
-            # Ensure check directory exists in container
-            subprocess.run(
-                [
-                    "docker",
-                    "exec",
-                    self.container_name,
-                    "mkdir",
-                    "-p",
-                    check_dir,
-                ],
-                capture_output=True,
-                check=True,
-            )
+            try:
+                # Ensure check directory exists in container
+                subprocess.run(
+                    [
+                        "docker",
+                        "exec",
+                        self.container_name,
+                        "mkdir",
+                        "-p",
+                        check_dir,
+                    ],
+                    capture_output=True,
+                    check=True,
+                )
 
-            # Copy file to container
-            subprocess.run(
-                ["docker", "cp", temp_path, f"{self.container_name}:{container_path}"],
-                capture_output=True,
-                check=True,
-            )
+                # Copy file to container
+                subprocess.run(
+                    ["docker", "cp", temp_path, f"{self.container_name}:{container_path}"],
+                    capture_output=True,
+                    check=True,
+                )
+            except subprocess.CalledProcessError as exc:
+                logger.warning(
+                    "Docker sandbox transient failure during syntax check: %s", exc
+                )
+                return True, None
 
             if language == "python":
                 result = self.execute(
