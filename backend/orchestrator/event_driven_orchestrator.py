@@ -130,6 +130,74 @@ class EventDrivenOrchestrator:
         )
         await self.event_bus.publish(event)
 
+    async def start_followup(self, project_id: str, message: str) -> None:
+        """Continue iterating on an existing project based on user feedback.
+
+        Reuses the review-iteration loop: the user's follow-up message is
+        treated as review feedback, the state machine returns to CODING, and
+        an ITERATION_STARTED event re-runs the coder against the existing code.
+        """
+        context = self._contexts.get(project_id)
+        if context is None:
+            # Context not in memory (server restart / project switch) —
+            # rebuild it from the state store and the project's files.
+            context = self._restore_context(project_id)
+            self._contexts[project_id] = context
+
+        sm = self._state_machines.get(project_id)
+        if sm is None:
+            sm = StateMachine(max_iterations=settings.max_review_iterations)
+            self._state_machines[project_id] = sm
+        if self._code_runners.get(project_id) is None:
+            self._code_runners[project_id] = CodeRunner(
+                timeout=settings.code_execution_timeout
+            )
+
+        # Treat the follow-up as feedback for the next coder iteration.
+        context.review_feedback = message
+        context.iteration = sm._review_count
+        self.state_store.increment_iteration(project_id)
+
+        sm.transition_to(WorkflowState.CODING)
+        self.state_store.update_state(project_id, WorkflowState.CODING)
+        await self._notify_workflow_state(project_id, sm)
+        await self._send_terminal(project_id, "agent", f"Follow-up: {message}\n")
+
+        await self.event_bus.publish(Event(
+            type=EventType.ITERATION_STARTED,
+            project_id=project_id,
+            payload={"reason": "user_followup", "message": message},
+        ))
+
+    def _restore_context(self, project_id: str) -> AgentContext:
+        """Rebuild an AgentContext from persisted state and project files.
+
+        Used when a follow-up arrives but the in-memory context is gone
+        (e.g. after a server restart).
+        """
+        project = self.state_store.get_project(project_id)
+        requirement = project.requirement if project else ""
+
+        context = AgentContext(requirement=requirement, project_id=project_id)
+        context.language = settings.default_language
+
+        fm = FileManager(base_dir=os.path.join(settings.output_dir, project_id))
+        # Document outputs map to dedicated files; everything else is code.
+        doc_files = {"spec.md", "architecture.md", "review.md"}
+        if fm.exists("spec.md"):
+            context.spec = fm.read_file("spec.md")
+        if fm.exists("architecture.md"):
+            context.architecture = fm.read_file("architecture.md")
+        for rel_path in fm.list_files():
+            if rel_path in doc_files:
+                continue
+            try:
+                context.code[rel_path] = fm.read_file(rel_path)
+            except (OSError, UnicodeDecodeError):
+                # Skip binary or unreadable files.
+                continue
+        return context
+
     # ------------------------------------------------------------------
     # Event handlers
     # ------------------------------------------------------------------
@@ -170,16 +238,23 @@ class EventDrivenOrchestrator:
                 payload={"error": "Project context not found"},
             )
 
+        # Notify that the agent is running
+        await self._notify_agent_status(project_id, plugin.name, "running")
+
         # Execute plugin
         try:
             output = await plugin.execute(context, event)
         except Exception as exc:
             logger.exception("Plugin %s failed for %s", plugin.name, project_id)
+            await self._notify_agent_status(project_id, plugin.name, "failed", error=str(exc))
             return Event(
                 type=EventType.ERROR,
                 project_id=project_id,
                 payload={"plugin": plugin.name, "error": str(exc)},
             )
+
+        # Notify completion
+        await self._notify_agent_status(project_id, plugin.name, "completed", output=output)
 
         # Update context based on plugin output
         self._update_context(context, plugin, output)
@@ -393,6 +468,41 @@ class EventDrivenOrchestrator:
             "stream": stream,
             "content": content,
         })
+
+    async def _notify_agent_status(
+        self,
+        project_id: str,
+        agent_name: str,
+        status: str,
+        *,
+        output: AgentOutput | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Broadcast an agent status update and persist it to the state store."""
+        message: dict = {
+            "type": "agent_status",
+            "project_id": project_id,
+            "agent": agent_name,
+            "status": status,
+        }
+        status_payload: dict = {"status": status}
+
+        if output is not None:
+            summary = output.content[:200] if len(output.content) > 200 else output.content
+            out = {
+                "summary": summary,
+                "files": list(output.files.keys()),
+                "metadata": output.metadata,
+            }
+            message["output"] = out
+            status_payload["output"] = out
+
+        if error is not None:
+            message["error"] = error
+            status_payload["error"] = error
+
+        await self.ws_manager.send_message(project_id, message)
+        self.state_store.update_agent_status(project_id, agent_name, status_payload)
 
     async def _notify_workflow_state(self, project_id: str, sm: StateMachine) -> None:
         """Send workflow state update via WebSocket."""

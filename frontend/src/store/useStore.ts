@@ -1,6 +1,18 @@
 import { create } from 'zustand';
 import type { AgentStatus, WorkflowState, Project, TerminalLine, ProjectSummary } from '../types';
 
+export type ActiveView = 'empty' | 'orchestrator' | 'completed' | 'diff';
+export type ActiveTab = 'explorer' | 'orchestrator' | 'logs';
+export type Theme = 'light' | 'dark';
+export type LogTab = 'terminal' | 'problems';
+
+export interface Problem {
+  severity: string;
+  file: string;
+  line?: number;
+  message: string;
+}
+
 interface AppState {
   currentProject: Project | null;
   projectId: string | null;
@@ -15,6 +27,14 @@ interface AppState {
   projectList: ProjectSummary[];
   isSettingsOpen: boolean;
 
+  // UI view state
+  activeView: ActiveView;
+  activeTab: ActiveTab;
+  theme: Theme;
+  activeLogTab: LogTab;
+  selectedDiffFile: string | null;
+  problems: Problem[];
+
   setProject: (project: Project | null) => void;
   setProjectId: (id: string | null) => void;
   setAgentStatus: (status: AgentStatus) => void;
@@ -28,6 +48,15 @@ interface AppState {
   clearTerminal: () => void;
   setProjectList: (projects: ProjectSummary[]) => void;
   setSettingsOpen: (open: boolean) => void;
+
+  setActiveView: (view: ActiveView) => void;
+  setActiveTab: (tab: ActiveTab) => void;
+  setTheme: (theme: Theme) => void;
+  setActiveLogTab: (tab: LogTab) => void;
+  setSelectedDiffFile: (file: string | null) => void;
+  setProblems: (problems: Problem[]) => void;
+  clearProblems: () => void;
+
   reset: () => void;
 }
 
@@ -44,6 +73,13 @@ const initialState = {
   terminalLines: [],
   projectList: [],
   isSettingsOpen: false,
+
+  activeView: 'empty' as ActiveView,
+  activeTab: 'orchestrator' as ActiveTab,
+  theme: 'light' as Theme,
+  activeLogTab: 'terminal' as LogTab,
+  selectedDiffFile: null,
+  problems: [],
 };
 
 export const useStore = create<AppState>((set) => ({
@@ -81,6 +117,14 @@ export const useStore = create<AppState>((set) => ({
   clearTerminal: () => set({ terminalLines: [] }),
   setProjectList: (projects) => set({ projectList: projects }),
   setSettingsOpen: (isSettingsOpen) => set({ isSettingsOpen }),
+
+  setActiveView: (activeView) => set({ activeView }),
+  setActiveTab: (activeTab) => set({ activeTab }),
+  setTheme: (theme) => set({ theme }),
+  setActiveLogTab: (activeLogTab) => set({ activeLogTab }),
+  setSelectedDiffFile: (selectedDiffFile) => set({ selectedDiffFile }),
+  setProblems: (problems) => set({ problems }),
+  clearProblems: () => set({ problems: [] }),
 
   reset: () => {
     localStorage.removeItem('devagent-project-id');

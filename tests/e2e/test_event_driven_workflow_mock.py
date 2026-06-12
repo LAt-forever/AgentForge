@@ -214,3 +214,50 @@ async def test_mock_workflow_iteration(mock_deps):
     history = event_bus.get_history(project_id)
     iteration_events = [e for e in history if e.type == EventType.ITERATION_STARTED]
     assert len(iteration_events) >= 1
+
+
+@pytest.mark.asyncio
+async def test_mock_follow_up_triggers_iteration(mock_deps):
+    """User follow-up continues iterating on a completed project."""
+    project_id = "mock-e2e-followup"
+    orchestrator = mock_deps["orchestrator"]
+    state_store = mock_deps["state_store"]
+    event_bus = mock_deps["event_bus"]
+
+    completion_event = asyncio.Event()
+
+    async def on_complete(event):
+        if event.project_id == project_id:
+            completion_event.set()
+
+    event_bus.subscribe(EventType.WORKFLOW_COMPLETED, on_complete)
+
+    await orchestrator.start_workflow(project_id, "Build a hello world CLI")
+    done, pending = await asyncio.wait(
+        [asyncio.create_task(completion_event.wait())],
+        timeout=30,
+    )
+    assert completion_event.is_set(), "Initial workflow did not complete"
+
+    initial_iterations = state_store.get_project(project_id).iteration_count
+
+    # Reset completion event and trigger follow-up
+    completion_event.clear()
+    await orchestrator.start_followup(project_id, "Add a greeting argument")
+
+    done, pending = await asyncio.wait(
+        [asyncio.create_task(completion_event.wait())],
+        timeout=30,
+    )
+    assert completion_event.is_set(), "Follow-up iteration did not complete"
+
+    project = state_store.get_project(project_id)
+    assert project.state == WorkflowState.DONE
+    assert project.iteration_count > initial_iterations, "Expected iteration count to increase"
+
+    history = event_bus.get_history(project_id)
+    followup_events = [
+        e for e in history
+        if e.type == EventType.ITERATION_STARTED and e.payload.get("reason") == "user_followup"
+    ]
+    assert len(followup_events) >= 1

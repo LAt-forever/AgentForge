@@ -115,6 +115,10 @@ class ProjectStatusResponse(BaseModel):
     outputs: dict
 
 
+class FollowUpRequest(BaseModel):
+    message: str
+
+
 # ---------------------------------------------------------------------------
 # REST Endpoints
 # ---------------------------------------------------------------------------
@@ -202,6 +206,15 @@ async def get_git_diff_commit(project_id: str, commit_hash: str):
         raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
     gm = GitManager(base_dir=settings.output_dir)
     return {"diff": gm.get_diff(project_id, commit_hash)}
+
+
+@app.post("/api/projects/{project_id}/follow_up")
+async def follow_up(project_id: str, request: FollowUpRequest):
+    """Continue iterating on an existing project with a user follow-up message."""
+    if state_store.get_project(project_id) is None:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    asyncio.create_task(orchestrator.start_followup(project_id, request.message))
+    return {"project_id": project_id, "state": "coding"}
 
 
 # ---------------------------------------------------------------------------
