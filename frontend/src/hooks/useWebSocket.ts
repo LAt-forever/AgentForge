@@ -12,6 +12,7 @@ export function useWebSocket() {
   const setWorkflowState = useStore((state) => state.setWorkflowState);
   const setRunning = useStore((state) => state.setRunning);
   const appendTerminalLine = useStore((state) => state.appendTerminalLine);
+  const setProblems = useStore((state) => state.setProblems);
   const projectId = useStore((state) => state.projectId);
 
   // Keep ref in sync with store
@@ -47,6 +48,10 @@ export function useWebSocket() {
             output: message.output as Record<string, unknown> | undefined,
             error: message.error as string | undefined,
           });
+          // A fresh reviewer run invalidates the previous problem list.
+          if (message.agent === 'reviewer' && message.status === 'running') {
+            setProblems([]);
+          }
         } else if (message.type === 'workflow_state') {
           setWorkflowState({
             project_id: message.project_id as string,
@@ -89,7 +94,7 @@ export function useWebSocket() {
     ws.onerror = (error) => {
       console.error('WebSocket error:', error);
     };
-  }, [setConnected, setAgentStatus, setWorkflowState, setRunning, appendTerminalLine]);
+  }, [setConnected, setAgentStatus, setWorkflowState, setRunning, appendTerminalLine, setProblems]);
 
   // Clean up on unmount
   useEffect(() => {

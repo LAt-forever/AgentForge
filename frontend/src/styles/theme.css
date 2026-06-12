@@ -1,4 +1,11 @@
-:root {
+/* ==========================================================================
+   DevAgent Theme — Codex Desktop inspired
+   Two scopes: .theme-dark (running/completed/diff) and .theme-light (empty).
+   :root defaults to dark for backwards compatibility.
+   ========================================================================== */
+
+:root,
+.theme-dark {
   --bg-primary: #0d1117;
   --bg-secondary: #161b22;
   --bg-tertiary: #21262d;
@@ -6,21 +13,68 @@
   --border-color: #30363d;
   --border-light: #484f58;
 
-  --text-primary: #c9d1d9;
+  --text-primary: #e6edf3;
   --text-secondary: #8b949e;
   --text-muted: #6e7681;
 
   --accent-blue: #58a6ff;
-  --accent-green: #238636;
+  --accent-green: #3fb950;
   --accent-yellow: #d29922;
-  --accent-red: #da3633;
-  --accent-purple: #8957e5;
+  --accent-red: #f85149;
+  --accent-purple: #a371f7;
+  --accent-cyan: #39c5cf;
+  --accent-orange: #db6d28;
+  --accent-pink: #db61a2;
 
-  --font-mono: 'SFMono-Regular', 'Consolas', 'Monaco', monospace;
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  /* Per-agent identity colors */
+  --agent-pm: var(--accent-purple);
+  --agent-architect: var(--accent-cyan);
+  --agent-coder: var(--accent-orange);
+  --agent-reviewer: var(--accent-pink);
+
+  /* Diff highlight backgrounds */
+  --diff-add-bg: rgba(63, 185, 80, 0.15);
+  --diff-del-bg: rgba(248, 81, 73, 0.15);
+}
+
+.theme-light {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f6f8fa;
+  --bg-tertiary: #eaeef2;
+  --bg-hover: #f3f4f6;
+  --border-color: #d0d7de;
+  --border-light: #c8d1da;
+
+  --text-primary: #1f2328;
+  --text-secondary: #656d76;
+  --text-muted: #8c959f;
+
+  --accent-blue: #0969da;
+  --accent-green: #1a7f37;
+  --accent-yellow: #9a6700;
+  --accent-red: #cf222e;
+  --accent-purple: #8250df;
+  --accent-cyan: #1b7c83;
+  --accent-orange: #bc4c00;
+  --accent-pink: #bf3989;
+
+  --agent-pm: var(--accent-purple);
+  --agent-architect: var(--accent-cyan);
+  --agent-coder: var(--accent-orange);
+  --agent-reviewer: var(--accent-pink);
+
+  --diff-add-bg: rgba(26, 127, 55, 0.12);
+  --diff-del-bg: rgba(207, 34, 46, 0.12);
+}
+
+:root {
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', 'Consolas', 'Monaco', monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
 
   --sidebar-width: 240px;
   --agent-panel-width: 360px;
+  --icon-sidebar-width: 48px;
+  --topnav-height: 48px;
 }
 
 * {
@@ -39,6 +93,17 @@ body {
 
 #root {
   height: 100vh;
+}
+
+/* File status dots */
+.status-new {
+  background: var(--accent-green);
+}
+.status-modified {
+  background: var(--accent-yellow);
+}
+.status-deleted {
+  background: var(--accent-red);
 }
 
 ::-webkit-scrollbar {
