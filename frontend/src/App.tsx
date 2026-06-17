@@ -6,6 +6,56 @@ import { CompletedView } from './components/CompletedView';
 import { DiffView } from './components/DiffView';
 import { useStore, getSavedProjectId } from './store/useStore';
 import { useWebSocket } from './hooks/useWebSocket';
+import type { ArtifactIssue, ArtifactStatus, WorkflowProfileName } from './types';
+
+const DEFAULT_ARTIFACT_STATUS: ArtifactStatus = {
+  type: 'none',
+  status: 'unknown',
+  preview_url: '',
+  issues: [],
+};
+
+const ARTIFACT_STATUSES: ReadonlySet<ArtifactStatus['status']> = new Set([
+  'unknown',
+  'not_web_artifact',
+  'validating',
+  'ready',
+  'missing_entry',
+  'invalid_refs',
+  'syntax_error',
+  'unsafe_path',
+  'error',
+]);
+
+function normalizeArtifactIssue(raw: unknown): ArtifactIssue {
+  const value = raw as Partial<ArtifactIssue> | undefined;
+  return {
+    severity: value?.severity ?? 'error',
+    code: value?.code,
+    file: value?.file,
+    line: typeof value?.line === 'number' ? value.line : undefined,
+    message: value?.message ?? '',
+    repairable: value?.repairable,
+  };
+}
+
+function normalizeArtifactStatus(raw: unknown): ArtifactStatus {
+  const value = raw as Partial<ArtifactStatus> | undefined;
+  const status = value?.status;
+
+  return {
+    type: value?.type ?? DEFAULT_ARTIFACT_STATUS.type,
+    status: ARTIFACT_STATUSES.has(status as ArtifactStatus['status'])
+      ? (status as ArtifactStatus['status'])
+      : DEFAULT_ARTIFACT_STATUS.status,
+    preview_url: typeof value?.preview_url === 'string' ? value.preview_url : '',
+    issues: Array.isArray(value?.issues) ? value.issues.map(normalizeArtifactIssue) : [],
+  };
+}
+
+function normalizeWorkflowProfile(raw: unknown): WorkflowProfileName {
+  return raw === 'static_web' ? 'static_web' : 'default';
+}
 
 export default function App() {
   const { connect } = useWebSocket();
@@ -80,28 +130,47 @@ export default function App() {
     setTheme(activeView === 'empty' ? 'light' : 'dark');
   }, [activeView, setTheme]);
 
-  // Parse reviewer output (JSON) into the problems list.
+  // Merge reviewer output and artifact validation issues into the problems list.
   useEffect(() => {
+    const nextProblems: Array<{
+      severity: string;
+      file: string;
+      line?: number;
+      message: string;
+    }> = [];
+
     const raw = currentProject?.outputs?.reviewer;
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw) as {
-        issues?: Array<{ severity: string; file?: string; line?: number; message: string }>;
-      };
-      if (Array.isArray(parsed.issues)) {
-        setProblems(
-          parsed.issues.map((it) => ({
-            severity: it.severity ?? 'warning',
-            file: it.file ?? '',
-            line: it.line,
-            message: it.message,
-          }))
-        );
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as {
+          issues?: Array<{ severity: string; file?: string; line?: number; message: string }>;
+        };
+        if (Array.isArray(parsed.issues)) {
+          nextProblems.push(
+            ...parsed.issues.map((it) => ({
+              severity: it.severity ?? 'warning',
+              file: it.file ?? '',
+              line: it.line,
+              message: it.message,
+            }))
+          );
+        }
+      } catch {
+        // Reviewer output not valid JSON — ignore.
       }
-    } catch {
-      // Reviewer output not valid JSON — ignore.
     }
-  }, [currentProject?.outputs?.reviewer, setProblems]);
+
+    nextProblems.push(
+      ...(currentProject?.artifact_status?.issues ?? []).map((issue) => ({
+        severity: issue.severity ?? 'error',
+        file: issue.file ?? '',
+        line: issue.line,
+        message: issue.message,
+      }))
+    );
+
+    setProblems(nextProblems);
+  }, [currentProject?.outputs?.reviewer, currentProject?.artifact_status, setProblems]);
 
   // Handle submit: create project and start workflow
   const handleSubmit = useCallback(
@@ -130,6 +199,8 @@ export default function App() {
           agent_statuses: {},
           iteration_count: 0,
           outputs: {},
+          workflow_profile: 'default',
+          artifact_status: normalizeArtifactStatus(undefined),
         });
         setTimeout(() => connect(), 0);
       } catch (err) {
@@ -193,12 +264,15 @@ export default function App() {
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data) {
+          const artifactStatus = normalizeArtifactStatus(data.artifact_status);
           setProject({
             project_id: data.project_id,
             state: data.state,
             agent_statuses: data.agent_statuses || {},
             iteration_count: data.iteration_count || 0,
             outputs: data.outputs || {},
+            workflow_profile: normalizeWorkflowProfile(data.workflow_profile),
+            artifact_status: artifactStatus,
           });
           if (data.state === 'done') setRunning(false);
           else setRunning(true);
@@ -248,12 +322,15 @@ export default function App() {
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
           if (data) {
+            const artifactStatus = normalizeArtifactStatus(data.artifact_status);
             setProject({
               project_id: data.project_id,
               state: data.state,
               agent_statuses: data.agent_statuses || {},
               iteration_count: data.iteration_count || 0,
               outputs: data.outputs || {},
+              workflow_profile: normalizeWorkflowProfile(data.workflow_profile),
+              artifact_status: artifactStatus,
             });
             setRunning(data.state !== 'done');
             hydrateAgentStatuses(data.agent_statuses || {});

@@ -1,6 +1,6 @@
 import { useRef, useCallback, useEffect } from 'react';
 import { useStore } from '../store/useStore';
-import type { WebSocketMessage } from '../types';
+import type { ArtifactStatus, WebSocketMessage } from '../types';
 
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
@@ -58,6 +58,8 @@ export function useWebSocket() {
             state: message.state as 'idle' | 'planning' | 'designing' | 'coding' | 'reviewing' | 'done',
             overall_progress: message.overall_progress as number,
             iteration_count: message.iteration_count as number,
+            workflow_profile: message.workflow_profile as 'default' | 'static_web' | undefined,
+            artifact_status: message.artifact_status as ArtifactStatus | undefined,
           });
           if ((message.state as string) === 'done') {
             setRunning(false);
