@@ -1,7 +1,9 @@
 """Tests for preview-serving API endpoints."""
 
 import os
+from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend import main
@@ -84,11 +86,50 @@ def test_preview_blocks_parent_traversal(tmp_path, monkeypatch):
     assert response.status_code in {403, 404}
 
 
+def test_preview_blocks_encoded_parent_traversal(tmp_path, monkeypatch):
+    client, state_store, output_dir = _make_client(tmp_path, monkeypatch)
+    _create_web_project(state_store, output_dir)
+
+    response = client.get("/api/projects/web1/preview/%2e%2e/states/web1.json")
+
+    assert response.status_code in {403, 404}
+
+
 def test_preview_blocks_dotfiles(tmp_path, monkeypatch):
     client, state_store, output_dir = _make_client(tmp_path, monkeypatch)
     _create_web_project(state_store, output_dir)
 
     response = client.get("/api/projects/web1/preview/.secret")
+
+    assert response.status_code == 403
+
+
+def test_preview_rejects_disallowed_extension_even_if_file_exists(tmp_path, monkeypatch):
+    client, state_store, output_dir = _make_client(tmp_path, monkeypatch)
+    _create_web_project(state_store, output_dir)
+    file_manager = FileManager(base_dir=os.path.join(output_dir, "web1"))
+    file_manager.write_file("secret.php", "<?php echo 'nope';")
+
+    response = client.get("/api/projects/web1/preview/secret.php")
+
+    assert response.status_code == 403
+
+
+def test_preview_blocks_symlink_escape(tmp_path, monkeypatch):
+    client, state_store, output_dir = _make_client(tmp_path, monkeypatch)
+    _create_web_project(state_store, output_dir)
+
+    project_dir = Path(output_dir) / "web1"
+    outside_file = tmp_path / "outside.txt"
+    outside_file.write_text("outside secret", encoding="utf-8")
+    link_path = project_dir / "linked.txt"
+
+    try:
+        link_path.symlink_to(outside_file)
+    except (NotImplementedError, OSError):
+        pytest.skip("symlinks are not supported on this platform")
+
+    response = client.get("/api/projects/web1/preview/linked.txt")
 
     assert response.status_code == 403
 

@@ -201,6 +201,11 @@ def _serve_preview_file(project_id: str, file_path: str):
             detail="Preview path is not allowed",
         ) from exc
 
+    project_root = os.path.realpath(os.path.join(settings.output_dir, project_id))
+    real_path = os.path.realpath(abs_path)
+    if not real_path.startswith(project_root + os.sep) and real_path != project_root:
+        raise HTTPException(status_code=403, detail="Preview path is not allowed")
+
     if not os.path.isfile(abs_path):
         raise HTTPException(
             status_code=404,
