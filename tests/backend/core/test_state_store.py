@@ -6,6 +6,7 @@ import pytest
 from tempfile import TemporaryDirectory
 
 from backend.core.state_store import StateStore, WorkflowState, ProjectState
+from backend.core.workflow_profiles import DEFAULT_PROFILE
 
 
 @pytest.fixture
@@ -39,7 +40,25 @@ class TestCreateAndGetProject:
         """Created projects default to the standard workflow profile."""
         project = state_store.create_project("proj_1", requirement="Build a CLI")
 
-        assert project.workflow_profile == "default"
+        assert project.workflow_profile == DEFAULT_PROFILE
+        assert project.artifact_status == {
+            "type": "none",
+            "status": "unknown",
+            "preview_url": "",
+            "issues": [],
+        }
+
+    def test_project_state_from_dict_defaults_missing_profile_fields(self):
+        """Older persisted state without new fields loads with defaults."""
+        project = ProjectState.from_dict(
+            {
+                "id": "proj_legacy",
+                "state": "idle",
+                "requirement": "Legacy project",
+            }
+        )
+
+        assert project.workflow_profile == DEFAULT_PROFILE
         assert project.artifact_status == {
             "type": "none",
             "status": "unknown",
@@ -180,7 +199,7 @@ class TestListProjectsDetailed:
         assert by_id["p1"]["requirement"] == "build a calculator"
         assert by_id["p1"]["state"] == "idle"
         assert by_id["p2"]["state"] == "done"
-        assert by_id["p1"]["workflow_profile"] == "default"
+        assert by_id["p1"]["workflow_profile"] == DEFAULT_PROFILE
         assert by_id["p1"]["artifact_status"] == {
             "type": "none",
             "status": "unknown",

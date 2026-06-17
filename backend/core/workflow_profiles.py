@@ -1,6 +1,6 @@
 """Workflow profile definitions and requirement-based resolution."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 DEFAULT_PROFILE = "default"
 STATIC_WEB_PROFILE = "static_web"
@@ -12,69 +12,65 @@ class WorkflowProfile:
 
     name: str
     display_name: str
-    agent_labels: dict
+    stage_labels: tuple[str, str, str, str]
     prompt_context: str = ""
-    validators: list = field(default_factory=list)
+    validators: tuple[str, ...] = ()
     preview_enabled: bool = False
 
 
-_DEFAULT_AGENT_LABELS = {
-    "pm": "PM Agent",
-    "architect": "Architect Agent",
-    "coder": "Coder Agent",
-    "reviewer": "Reviewer Agent",
-}
+_DEFAULT_STAGE_LABELS = ("PM", "Architect", "Coder", "Reviewer")
 
-_STATIC_WEB_AGENT_LABELS = {
-    "pm": "Product Brief",
-    "architect": "Web Structure",
-    "coder": "Frontend Build",
-    "reviewer": "Web Review",
-}
+_STATIC_WEB_STAGE_LABELS = (
+    "Product Brief",
+    "Web Structure",
+    "Frontend Build",
+    "Web Review",
+)
 
 _STATIC_WEB_PROMPT_CONTEXT = (
-    "Build browser-ready static frontend files: index.html, style.css, and "
-    "script.js. avoid external/CDN runtime dependencies. Review the result as "
-    "an interactive web page."
+    "Create browser-ready static files index.html, style.css, and script.js. "
+    "Please avoid external/CDN runtime deps. Review the result as an "
+    "interactive web page."
 )
 
 _PROFILES = {
     DEFAULT_PROFILE: WorkflowProfile(
         name=DEFAULT_PROFILE,
         display_name="Default",
-        agent_labels=_DEFAULT_AGENT_LABELS,
+        stage_labels=_DEFAULT_STAGE_LABELS,
     ),
     STATIC_WEB_PROFILE: WorkflowProfile(
         name=STATIC_WEB_PROFILE,
         display_name="Web App",
-        agent_labels=_STATIC_WEB_AGENT_LABELS,
+        stage_labels=_STATIC_WEB_STAGE_LABELS,
         prompt_context=_STATIC_WEB_PROMPT_CONTEXT,
-        validators=["web_artifact"],
+        validators=("web_artifact",),
         preview_enabled=True,
     ),
 }
 
 _STATIC_WEB_TERMS = (
+    "static web",
+    "static website",
+    "landing page",
     "web",
     "page",
     "html",
     "css",
+    "js",
     "javascript",
     "frontend",
     "browser",
-    "timer",
-    "calculator",
-    "palette",
-    "dashboard",
-    "form",
+    "website",
+    "网页",
+    "静态网页",
+    "静态网站",
     "网页",
     "页面",
     "前端",
     "浏览器",
-    "计时器",
-    "计算器",
-    "调色板",
-    "表单",
+    "网站",
+    "落地页",
 )
 
 

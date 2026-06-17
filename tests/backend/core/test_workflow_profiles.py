@@ -8,74 +8,76 @@ from backend.core.workflow_profiles import (
 )
 
 
-def test_get_default_profile():
-    """Default profile uses existing agent labels and no preview."""
-    profile = get_workflow_profile(DEFAULT_PROFILE)
+class TestGetWorkflowProfile:
+    """Test fetching workflow profile definitions."""
 
-    assert profile.name == DEFAULT_PROFILE
-    assert profile.display_name == "Default"
-    assert profile.agent_labels == {
-        "pm": "PM Agent",
-        "architect": "Architect Agent",
-        "coder": "Coder Agent",
-        "reviewer": "Reviewer Agent",
-    }
-    assert profile.prompt_context == ""
-    assert profile.validators == []
-    assert profile.preview_enabled is False
+    def test_default_profile_definition(self):
+        """Default profile exposes standard labels and no preview."""
+        profile = get_workflow_profile(DEFAULT_PROFILE)
 
+        assert profile.name == DEFAULT_PROFILE
+        assert profile.display_name == "Default"
+        assert profile.stage_labels == ("PM", "Architect", "Coder", "Reviewer")
+        assert profile.prompt_context == ""
+        assert profile.validators == ()
+        assert profile.preview_enabled is False
 
-def test_get_static_web_profile():
-    """Static web profile describes browser-ready frontend artifacts."""
-    profile = get_workflow_profile(STATIC_WEB_PROFILE)
+    def test_static_web_profile_definition(self):
+        """Static web profile exposes browser-oriented workflow metadata."""
+        profile = get_workflow_profile(STATIC_WEB_PROFILE)
 
-    assert profile.name == STATIC_WEB_PROFILE
-    assert profile.display_name == "Web App"
-    assert profile.agent_labels == {
-        "pm": "Product Brief",
-        "architect": "Web Structure",
-        "coder": "Frontend Build",
-        "reviewer": "Web Review",
-    }
-    assert "index.html" in profile.prompt_context
-    assert "style.css" in profile.prompt_context
-    assert "script.js" in profile.prompt_context
-    assert "avoid external/CDN runtime dependencies" in profile.prompt_context
-    assert "interactive web page" in profile.prompt_context
-    assert profile.validators == ["web_artifact"]
-    assert profile.preview_enabled is True
+        assert profile.name == STATIC_WEB_PROFILE
+        assert profile.display_name == "Web App"
+        assert profile.stage_labels == (
+            "Product Brief",
+            "Web Structure",
+            "Frontend Build",
+            "Web Review",
+        )
+        assert "browser-ready static files" in profile.prompt_context
+        assert "index.html" in profile.prompt_context
+        assert "style.css" in profile.prompt_context
+        assert "script.js" in profile.prompt_context
+        assert "avoid external/CDN runtime deps" in profile.prompt_context
+        assert "interactive web page" in profile.prompt_context
+        assert profile.validators == ("web_artifact",)
+        assert profile.preview_enabled is True
 
+    def test_unknown_profile_falls_back_to_default(self):
+        """Unknown profile names return the default profile."""
+        profile = get_workflow_profile("missing")
 
-def test_unknown_profile_falls_back_to_default():
-    """Unknown profile names resolve to the default profile."""
-    profile = get_workflow_profile("missing")
-
-    assert profile.name == DEFAULT_PROFILE
+        assert profile.name == DEFAULT_PROFILE
 
 
-def test_resolve_static_web_from_english_terms():
-    """English web-related requirements resolve to the static web profile."""
-    profile = resolve_workflow_profile("Build a browser timer with HTML and CSS")
+class TestResolveWorkflowProfile:
+    """Test workflow profile selection."""
 
-    assert profile.name == STATIC_WEB_PROFILE
+    def test_resolves_static_web_for_english_requirement(self):
+        """English static-web terms select the web app workflow."""
+        profile = resolve_workflow_profile(
+            "Build a browser-based landing page with HTML, CSS, and JavaScript."
+        )
 
+        assert profile.name == STATIC_WEB_PROFILE
 
-def test_resolve_static_web_from_chinese_terms():
-    """Chinese web-related requirements resolve to the static web profile."""
-    profile = resolve_workflow_profile("制作一个前端计算器页面")
+    def test_resolves_static_web_for_chinese_requirement(self):
+        """Chinese static-web terms select the web app workflow."""
+        profile = resolve_workflow_profile("请帮我做一个静态网页，用 HTML/CSS/JS 实现。")
 
-    assert profile.name == STATIC_WEB_PROFILE
+        assert profile.name == STATIC_WEB_PROFILE
 
+    def test_resolves_default_for_cli_requirement(self):
+        """Non-web requirements stay on the default workflow."""
+        profile = resolve_workflow_profile("Build a CLI tool that parses CSV files.")
 
-def test_resolve_cli_requirement_defaults():
-    """CLI-style requirements without web terms use the default profile."""
-    profile = resolve_workflow_profile("Build a Python command line file renamer")
+        assert profile.name == DEFAULT_PROFILE
 
-    assert profile.name == DEFAULT_PROFILE
+    def test_explicit_override_wins(self):
+        """Explicit workflow selection overrides heuristics."""
+        profile = resolve_workflow_profile(
+            "Build a CLI tool that parses CSV files.",
+            explicit=STATIC_WEB_PROFILE,
+        )
 
-
-def test_resolve_explicit_profile_overrides_requirement():
-    """Explicit profile names override requirement inference."""
-    profile = resolve_workflow_profile("Build a Python CLI tool", explicit=STATIC_WEB_PROFILE)
-
-    assert profile.name == STATIC_WEB_PROFILE
+        assert profile.name == STATIC_WEB_PROFILE

@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
+from backend.core.workflow_profiles import DEFAULT_PROFILE
+
 
 def _default_artifact_status() -> dict:
     return {
@@ -50,7 +52,7 @@ class ProjectState:
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     outputs: dict = field(default_factory=dict)
-    workflow_profile: str = "default"
+    workflow_profile: str = DEFAULT_PROFILE
     artifact_status: dict = field(default_factory=_default_artifact_status)
 
     def to_dict(self) -> dict:
@@ -82,7 +84,7 @@ class ProjectState:
             created_at=data.get("created_at", datetime.now(timezone.utc).isoformat()),
             updated_at=data.get("updated_at", datetime.now(timezone.utc).isoformat()),
             outputs=data.get("outputs", {}),
-            workflow_profile=data.get("workflow_profile", "default"),
+            workflow_profile=data.get("workflow_profile", DEFAULT_PROFILE),
             artifact_status=data.get("artifact_status", _default_artifact_status()),
         )
 
