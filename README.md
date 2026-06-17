@@ -57,6 +57,11 @@
 - ⚙️ **Settings UI** — manage API keys, models, timeouts, iteration limits
 - 🌍 **Multi-language** — generate Python, TypeScript, or JavaScript
 
+### 🌐 Web App Preview Mode
+- Automatically detects small static frontend tool requests.
+- Guides agents to produce preview-ready `index.html`, `style.css`, and `script.js` artifacts.
+- Validates local static references and exposes a Preview App action when the artifact is ready.
+
 ---
 
 ## 🏛️ Architecture

@@ -51,6 +51,19 @@ class ReviewerAgent(BaseAgent):
             except Exception:
                 continue
 
+        using_context_code = False
+        if not code_sections and context.code:
+            for filepath, content in context.code.items():
+                if not (
+                    filepath.endswith(code_extensions)
+                    or filepath in ("requirements.txt", "README.md")
+                ):
+                    continue
+                if len(content.strip()) < 5:
+                    continue
+                code_sections.append(f"### {filepath}\n```\n{content}\n```")
+            using_context_code = bool(code_sections)
+
         if not code_sections:
             # No actual code files on disk - this is a real failure
             return AgentOutput(
@@ -77,7 +90,10 @@ class ReviewerAgent(BaseAgent):
 
         code_text = "\n\n".join(code_sections)
 
-        analysis_section = self._run_static_analysis(context.project_id, review_files)
+        analysis_section = (
+            "" if using_context_code
+            else self._run_static_analysis(context.project_id, review_files)
+        )
 
         user_prompt_parts = []
         if context.workflow_prompt_context:
@@ -102,7 +118,7 @@ class ReviewerAgent(BaseAgent):
         review_data = self._parse_review(review_response)
 
         # Post-process: override false negatives
-        if actual_files and not review_data.get("passed", False):
+        if (actual_files or using_context_code) and not review_data.get("passed", False):
             issues = review_data.get("issues", [])
             filtered_issues = [
                 issue for issue in issues
