@@ -49,10 +49,11 @@ const AgentRow: React.FC<{ meta: AgentMeta; status?: AgentStatus }> = ({ meta, s
         boxShadow: isRunning ? '0 0 0 1px var(--accent-blue)' : 'none',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', gap: '8px' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
           <span
             style={{
+              flexShrink: 0,
               fontSize: '10px',
               fontWeight: 700,
               padding: '2px 6px',
@@ -64,7 +65,17 @@ const AgentRow: React.FC<{ meta: AgentMeta; status?: AgentStatus }> = ({ meta, s
           >
             {meta.label.slice(0, 4)}
           </span>
-          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
+          <span
+            style={{
+              minWidth: 0,
+              fontSize: '13px',
+              fontWeight: 600,
+              color: 'var(--text-primary)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
             {meta.label}
           </span>
         </span>

@@ -29,11 +29,16 @@ export const CompletedView: React.FC<CompletedViewProps> = ({ onFollowUp }) => {
   const isWebApp = currentProject?.workflow_profile === 'static_web';
   const artifactStatus = currentProject?.artifact_status;
   const previewReady = artifactStatus?.status === 'ready' && Boolean(artifactStatus.preview_url);
-  const successTitle = isWebApp && previewReady ? '✓ Preview ready' : '✓ All checks passed';
-  const successDescription =
-    isWebApp && previewReady
+  const successTitle = isWebApp
+    ? previewReady
+      ? '✓ Preview ready'
+      : 'Preview not ready'
+    : '✓ All checks passed';
+  const successDescription = isWebApp
+    ? previewReady
       ? `Static web app validated. Generated ${fileCount} file${fileCount === 1 ? '' : 's'}.`
-      : `Generated ${fileCount} file${fileCount === 1 ? '' : 's'}. All tests passing.`;
+      : `Static web app generated, but preview status is ${artifactStatus?.status ?? 'unknown'}.`
+    : `Generated ${fileCount} file${fileCount === 1 ? '' : 's'}. All tests passing.`;
 
   const openInEditor = () => {
     setActiveTab('explorer');

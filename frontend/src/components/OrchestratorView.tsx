@@ -22,9 +22,10 @@ export const OrchestratorView: React.FC<OrchestratorViewProps> = ({ onFollowUp, 
   const currentProject = useStore((s) => s.currentProject);
   const setSelectedDiffFile = useStore((s) => s.setSelectedDiffFile);
   const setActiveView = useStore((s) => s.setActiveView);
+  const isWebApp = currentProject?.workflow_profile === 'static_web';
   const previewUrl = currentProject?.artifact_status?.preview_url ?? '';
   const canPreview = currentProject?.artifact_status?.status === 'ready' && Boolean(previewUrl);
-  const showPreviewButton = currentFile === 'index.html' || canPreview;
+  const showPreviewButton = isWebApp && (currentFile === 'index.html' || canPreview);
 
   const openDiff = () => {
     if (currentFile) {
@@ -63,8 +64,8 @@ export const OrchestratorView: React.FC<OrchestratorViewProps> = ({ onFollowUp, 
                   padding: '4px 10px',
                   borderRadius: '4px',
                   border: '1px solid var(--border-color)',
-                  background: 'var(--bg-tertiary)',
-                  color: canPreview ? 'var(--text-secondary)' : 'var(--text-muted)',
+                  background: canPreview ? 'var(--accent-blue)' : 'var(--bg-tertiary)',
+                  color: canPreview ? '#fff' : 'var(--text-muted)',
                   cursor: canPreview ? 'pointer' : 'not-allowed',
                   opacity: canPreview ? 1 : 0.65,
                 }}
