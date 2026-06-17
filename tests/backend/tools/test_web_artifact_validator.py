@@ -113,6 +113,17 @@ class TestWebArtifactValidator:
         assert result["status"] == "unsafe_path"
         assert result["issues"][0]["code"] == "unsafe_ref"
 
+    def test_encoded_path_traversal_reference_fails(self, file_manager, validator):
+        file_manager.write_file(
+            "index.html",
+            '<!doctype html><html><body><script src="%2e%2e%2fsecret.js"></script></body></html>',
+        )
+
+        result = validator.validate()
+
+        assert result["status"] == "unsafe_path"
+        assert result["issues"][0]["code"] == "unsafe_ref"
+
     def test_absolute_filesystem_reference_fails(self, file_manager, validator):
         file_manager.write_file(
             "index.html",
@@ -123,3 +134,24 @@ class TestWebArtifactValidator:
 
         assert result["status"] == "unsafe_path"
         assert result["issues"][0]["code"] == "unsafe_ref"
+
+    def test_unsafe_and_missing_refs_are_both_reported(self, file_manager, validator):
+        file_manager.write_file(
+            "index.html",
+            (
+                '<!doctype html><html><head>'
+                '<link rel="stylesheet" href="styles.css">'
+                '</head><body>'
+                '<script src="../secret.js"></script>'
+                "</body></html>"
+            ),
+        )
+
+        result = validator.validate()
+
+        assert result["status"] == "unsafe_path"
+        assert result["preview_url"] == ""
+        assert [issue["code"] for issue in result["issues"]] == [
+            "missing_ref",
+            "unsafe_ref",
+        ]

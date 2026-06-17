@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from html.parser import HTMLParser
 from pathlib import PurePosixPath
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from backend.tools.file_manager import FileManager
 
@@ -58,6 +58,7 @@ class WebArtifactValidator:
             }
 
         refs = self._extract_refs(self._file_manager.read_file("index.html"))
+        issues = []
         unsafe_issues = []
         missing_issues = []
 
@@ -67,30 +68,28 @@ class WebArtifactValidator:
 
             normalized_ref = self._normalize_local_ref(ref)
             if self._is_unsafe_local_ref(normalized_ref):
-                unsafe_issues.append(
-                    self._issue(
-                        code="unsafe_ref",
-                        message=f"Unsafe local reference in index.html: {ref}",
-                        repairable=False,
-                    )
+                issue = self._issue(
+                    code="unsafe_ref",
+                    message=f"Unsafe local reference in index.html: {ref}",
+                    repairable=False,
                 )
+                unsafe_issues.append(issue)
+                issues.append(issue)
                 continue
 
             if not self._file_manager.exists(normalized_ref):
-                missing_issues.append(
-                    self._issue(
-                        code="missing_ref",
-                        message=f"Missing local reference in index.html: {ref}",
-                        repairable=True,
-                    )
+                issue = self._issue(
+                    code="missing_ref",
+                    message=f"Missing local reference in index.html: {ref}",
+                    repairable=True,
                 )
+                missing_issues.append(issue)
+                issues.append(issue)
 
         if unsafe_issues:
             status = "unsafe_path"
-            issues = unsafe_issues
         elif missing_issues:
             status = "invalid_refs"
-            issues = missing_issues
         else:
             status = "ready"
             issues = []
@@ -119,7 +118,7 @@ class WebArtifactValidator:
         return False
 
     def _normalize_local_ref(self, ref: str) -> str:
-        parsed = urlparse(ref.strip().replace("\\", "/"))
+        parsed = urlparse(unquote(ref.strip().replace("\\", "/")))
         return parsed.path
 
     def _is_unsafe_local_ref(self, ref: str) -> bool:
