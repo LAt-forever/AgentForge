@@ -89,6 +89,18 @@ class TestResolveWorkflowProfile:
 
         assert profile.name == DEFAULT_PROFILE
 
+    def test_resolves_default_for_cli_timer_requirement(self):
+        """Broad timer terms should not override an explicit CLI request."""
+        profile = resolve_workflow_profile("Build a CLI timer")
+
+        assert profile.name == DEFAULT_PROFILE
+
+    def test_resolves_default_for_json_form_parser_cli_requirement(self):
+        """Broad form terms should not override an explicit CLI parser request."""
+        profile = resolve_workflow_profile("Build a JSON form parser CLI")
+
+        assert profile.name == DEFAULT_PROFILE
+
     def test_explicit_override_wins(self):
         """Explicit workflow selection overrides heuristics."""
         profile = resolve_workflow_profile(

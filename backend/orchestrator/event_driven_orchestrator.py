@@ -370,14 +370,14 @@ class EventDrivenOrchestrator:
             for err in syntax_errors:
                 await self._send_terminal(project_id, "stderr", err + "\n")
 
-            if sm.can_iterate():
-                context.review_feedback = (
+            if self._start_repair_iteration(
+                project_id,
+                context,
+                (
                     "The generated code has syntax errors. Please fix them.\n\n"
                     + "\n".join(syntax_errors)
-                )
-                context.iteration = sm._review_count
-                self.state_store.increment_iteration(project_id)
-
+                ),
+            ):
                 # Stay in CODING state, loop back to coder
                 await self.ws_manager.send_message(project_id, {
                     "type": "agent_status",
@@ -413,23 +413,22 @@ class EventDrivenOrchestrator:
 
             context.artifact_status = deepcopy(artifact_status)
             self.state_store.update_artifact_status(project_id, artifact_status)
+            await self._notify_workflow_state(project_id, sm)
 
             repairable_issues = [
                 issue for issue in artifact_status.get("issues", [])
                 if issue.get("repairable")
             ]
-            if repairable_issues and sm.can_iterate():
-                issue_lines = [
+            if repairable_issues and self._start_repair_iteration(
+                project_id,
+                context,
+                "The generated static web artifact failed validation. "
+                "Please fix these issues:\n\n"
+                + "\n".join(
                     f"- {issue.get('message', 'Unknown validation issue')}"
                     for issue in repairable_issues
-                ]
-                context.review_feedback = (
-                    "The generated static web artifact failed validation. "
-                    "Please fix these issues:\n\n"
-                    + "\n".join(issue_lines)
-                )
-                context.iteration = sm._review_count
-                self.state_store.increment_iteration(project_id)
+                ),
+            ):
                 return Event(
                     type=EventType.ITERATION_STARTED,
                     project_id=project_id,
@@ -456,12 +455,11 @@ class EventDrivenOrchestrator:
 
         review_passed = event.payload.get("metadata", {}).get("passed", False)
 
-        if not review_passed and sm.can_iterate():
-            # Set up iteration context
-            context.review_feedback = event.payload.get("output", "")
-            context.iteration = sm._review_count
-            self.state_store.increment_iteration(project_id)
-
+        if not review_passed and self._start_repair_iteration(
+            project_id,
+            context,
+            event.payload.get("output", ""),
+        ):
             # Transition back to CODING
             sm.transition_to(WorkflowState.CODING)
             self.state_store.update_state(project_id, WorkflowState.CODING)
@@ -509,6 +507,26 @@ class EventDrivenOrchestrator:
             "reviewer": f"review: add review report{iteration}",
         }
         return msg_map.get(plugin.name, f"{plugin.name}: update")
+
+    def _start_repair_iteration(
+        self,
+        project_id: str,
+        context: AgentContext,
+        review_feedback: str,
+    ) -> bool:
+        """Consume shared retry budget for repair iterations before re-running coder."""
+        project = self.state_store.get_project(project_id)
+        sm = self._state_machines.get(project_id)
+        if project is None or sm is None:
+            return False
+        if project.iteration_count >= sm.max_iterations:
+            return False
+
+        self.state_store.increment_iteration(project_id)
+        updated_project = self.state_store.get_project(project_id)
+        context.review_feedback = review_feedback
+        context.iteration = updated_project.iteration_count if updated_project else project.iteration_count + 1
+        return True
 
     async def _transition_state(
         self, project_id: str, sm: StateMachine, plugin: AgentPlugin, output: AgentOutput

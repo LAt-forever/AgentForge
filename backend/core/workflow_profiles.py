@@ -125,6 +125,47 @@ _CJK_STATIC_WEB_TERMS = (
     "表单",
 )
 
+_ASCII_EXPLICIT_WEB_TERMS = (
+    "static web",
+    "static website",
+    "landing page",
+    "web",
+    "page",
+    "html",
+    "css",
+    "js",
+    "javascript",
+    "frontend",
+    "browser",
+    "website",
+)
+
+_CJK_EXPLICIT_WEB_TERMS = (
+    "网页",
+    "静态网页",
+    "静态网站",
+    "页面",
+    "前端",
+    "浏览器",
+    "网站",
+    "落地页",
+)
+
+_ASCII_CLI_TERMS = (
+    "cli",
+    "command line",
+    "terminal",
+    "console",
+    "shell",
+)
+
+_CJK_CLI_TERMS = (
+    "命令行",
+    "终端",
+    "控制台",
+    "shell",
+)
+
 
 def get_workflow_profile(name: str | None) -> WorkflowProfile:
     """Return a workflow profile, falling back to default for unknown names."""
@@ -147,6 +188,8 @@ def resolve_workflow_profile(
         return get_workflow_profile(explicit)
 
     normalized = requirement.lower()
+    if _matches_cli_requirement(normalized) and not _matches_explicit_web_requirement(normalized):
+        return get_workflow_profile(DEFAULT_PROFILE)
     if _matches_static_web_requirement(normalized):
         return get_workflow_profile(STATIC_WEB_PROFILE)
     return get_workflow_profile(DEFAULT_PROFILE)
@@ -157,3 +200,17 @@ def _matches_static_web_requirement(requirement: str) -> bool:
         if re.search(r"\b" + re.escape(term) + r"\b", requirement):
             return True
     return any(term in requirement for term in _CJK_STATIC_WEB_TERMS)
+
+
+def _matches_explicit_web_requirement(requirement: str) -> bool:
+    for term in _ASCII_EXPLICIT_WEB_TERMS:
+        if re.search(r"\b" + re.escape(term) + r"\b", requirement):
+            return True
+    return any(term in requirement for term in _CJK_EXPLICIT_WEB_TERMS)
+
+
+def _matches_cli_requirement(requirement: str) -> bool:
+    for term in _ASCII_CLI_TERMS:
+        if re.search(r"\b" + re.escape(term) + r"\b", requirement):
+            return True
+    return any(term in requirement for term in _CJK_CLI_TERMS)
