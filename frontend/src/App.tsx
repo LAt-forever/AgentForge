@@ -6,56 +6,11 @@ import { CompletedView } from './components/CompletedView';
 import { DiffView } from './components/DiffView';
 import { useStore, getSavedProjectId } from './store/useStore';
 import { useWebSocket } from './hooks/useWebSocket';
-import type { ArtifactIssue, ArtifactStatus, WorkflowProfileName } from './types';
-
-const DEFAULT_ARTIFACT_STATUS: ArtifactStatus = {
-  type: 'none',
-  status: 'unknown',
-  preview_url: '',
-  issues: [],
-};
-
-const ARTIFACT_STATUSES: ReadonlySet<ArtifactStatus['status']> = new Set([
-  'unknown',
-  'not_web_artifact',
-  'validating',
-  'ready',
-  'missing_entry',
-  'invalid_refs',
-  'syntax_error',
-  'unsafe_path',
-  'error',
-]);
-
-function normalizeArtifactIssue(raw: unknown): ArtifactIssue {
-  const value = raw as Partial<ArtifactIssue> | undefined;
-  return {
-    severity: value?.severity ?? 'error',
-    code: value?.code,
-    file: value?.file,
-    line: typeof value?.line === 'number' ? value.line : undefined,
-    message: value?.message ?? '',
-    repairable: value?.repairable,
-  };
-}
-
-function normalizeArtifactStatus(raw: unknown): ArtifactStatus {
-  const value = raw as Partial<ArtifactStatus> | undefined;
-  const status = value?.status;
-
-  return {
-    type: value?.type ?? DEFAULT_ARTIFACT_STATUS.type,
-    status: ARTIFACT_STATUSES.has(status as ArtifactStatus['status'])
-      ? (status as ArtifactStatus['status'])
-      : DEFAULT_ARTIFACT_STATUS.status,
-    preview_url: typeof value?.preview_url === 'string' ? value.preview_url : '',
-    issues: Array.isArray(value?.issues) ? value.issues.map(normalizeArtifactIssue) : [],
-  };
-}
-
-function normalizeWorkflowProfile(raw: unknown): WorkflowProfileName {
-  return raw === 'static_web' ? 'static_web' : 'default';
-}
+import {
+  DEFAULT_ARTIFACT_STATUS,
+  normalizeArtifactStatus,
+  normalizeWorkflowProfile,
+} from './types';
 
 export default function App() {
   const { connect } = useWebSocket();
@@ -200,7 +155,10 @@ export default function App() {
           iteration_count: 0,
           outputs: {},
           workflow_profile: 'default',
-          artifact_status: normalizeArtifactStatus(undefined),
+          artifact_status: {
+            ...DEFAULT_ARTIFACT_STATUS,
+            issues: [...DEFAULT_ARTIFACT_STATUS.issues],
+          },
         });
         setTimeout(() => connect(), 0);
       } catch (err) {
