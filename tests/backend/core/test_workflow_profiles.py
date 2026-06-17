@@ -68,6 +68,12 @@ class TestResolveWorkflowProfile:
 
         assert profile.name == STATIC_WEB_PROFILE
 
+    def test_resolves_static_web_for_chinese_dashboard_requirement(self):
+        """Chinese dashboard terms select the web app workflow."""
+        profile = resolve_workflow_profile("做一个销售仪表盘")
+
+        assert profile.name == STATIC_WEB_PROFILE
+
     def test_resolves_default_for_cli_requirement(self):
         """Non-web requirements stay on the default workflow."""
         profile = resolve_workflow_profile("Build a CLI tool that parses CSV files.")
