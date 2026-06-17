@@ -95,6 +95,48 @@ class TestResolveWorkflowProfile:
 
         assert profile.name == DEFAULT_PROFILE
 
+    def test_resolves_default_for_python_calculator_requirement(self):
+        """Broad product terms should not override an explicit Python request."""
+        profile = resolve_workflow_profile("Build a Python calculator")
+
+        assert profile.name == DEFAULT_PROFILE
+
+    def test_resolves_default_for_python_dashboard_requirement(self):
+        """Broad dashboard terms should not override an explicit Python request."""
+        profile = resolve_workflow_profile("Build a Python sales dashboard")
+
+        assert profile.name == DEFAULT_PROFILE
+
+    def test_resolves_default_for_python_web_scraper_requirement(self):
+        """Generic web terms should not override an explicit Python scraper request."""
+        profile = resolve_workflow_profile("Build a Python web scraper")
+
+        assert profile.name == DEFAULT_PROFILE
+
+    def test_resolves_default_for_python_web_api_requirement(self):
+        """Generic web terms should not override an explicit Python API request."""
+        profile = resolve_workflow_profile("Build a Python web API")
+
+        assert profile.name == DEFAULT_PROFILE
+
+    def test_resolves_default_for_python_page_scraper_requirement(self):
+        """Generic page terms should not override an explicit Python scraper request."""
+        profile = resolve_workflow_profile("Build a Python page scraper")
+
+        assert profile.name == DEFAULT_PROFILE
+
+    def test_resolves_default_for_python_package_page_generator_requirement(self):
+        """Generic page terms should not override an explicit Python package request."""
+        profile = resolve_workflow_profile("Build a Python package page generator")
+
+        assert profile.name == DEFAULT_PROFILE
+
+    def test_resolves_static_web_for_python_web_page_requirement(self):
+        """Explicit page terms still select static web even with Python present."""
+        profile = resolve_workflow_profile("Build a Python web page")
+
+        assert profile.name == STATIC_WEB_PROFILE
+
     def test_resolves_default_for_json_form_parser_cli_requirement(self):
         """Broad form terms should not override an explicit CLI parser request."""
         profile = resolve_workflow_profile("Build a JSON form parser CLI")

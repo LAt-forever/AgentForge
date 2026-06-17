@@ -89,7 +89,12 @@ class EventDrivenOrchestrator:
     # Public API
     # ------------------------------------------------------------------
 
-    async def start_workflow(self, project_id: str, requirement: str) -> None:
+    async def start_workflow(
+        self,
+        project_id: str,
+        requirement: str,
+        workflow_profile: str | None = None,
+    ) -> None:
         """Start a new workflow for a project.
 
         Initializes context, state machine, file manager, git repo,
@@ -102,7 +107,7 @@ class EventDrivenOrchestrator:
         # Initialize project state
         context = AgentContext(requirement=requirement, project_id=project_id)
         context.language = settings.default_language
-        profile = resolve_workflow_profile(requirement)
+        profile = resolve_workflow_profile(requirement, explicit=workflow_profile)
         context.workflow_profile = profile.name
         context.workflow_profile_display = profile.display_name
         context.workflow_prompt_context = profile.prompt_context
@@ -625,7 +630,7 @@ class EventDrivenOrchestrator:
             "project_id": project_id,
             "state": sm.current.value,
             "overall_progress": progress_map.get(sm.current, 0),
-            "iteration_count": sm._review_count,
+            "iteration_count": project.iteration_count if project else sm._review_count,
             "workflow_profile": profile_name,
             "artifact_status": artifact_status,
         })

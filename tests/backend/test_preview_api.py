@@ -154,6 +154,50 @@ def test_preview_rejects_non_ready_projects(tmp_path, monkeypatch):
     assert response.json()["detail"] == "Project cli1 is not preview-ready"
 
 
+def test_preview_rejects_ready_non_static_web_profile(tmp_path, monkeypatch):
+    client, state_store, output_dir = _make_client(tmp_path, monkeypatch)
+    state_store.create_project("cli1", "Build a CLI")
+    state_store.update_workflow_profile("cli1", "default")
+    state_store.update_artifact_status(
+        "cli1",
+        {
+            "type": "static_web",
+            "status": "ready",
+            "preview_url": "/api/projects/cli1/preview/",
+            "issues": [],
+        },
+    )
+    file_manager = FileManager(base_dir=os.path.join(output_dir, "cli1"))
+    file_manager.write_file("index.html", "<!doctype html><html></html>")
+
+    response = client.get("/api/projects/cli1/preview/")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Project cli1 is not preview-ready"
+
+
+def test_preview_rejects_ready_non_static_web_artifact(tmp_path, monkeypatch):
+    client, state_store, output_dir = _make_client(tmp_path, monkeypatch)
+    state_store.create_project("web1", "Build a static web app")
+    state_store.update_workflow_profile("web1", "static_web")
+    state_store.update_artifact_status(
+        "web1",
+        {
+            "type": "none",
+            "status": "ready",
+            "preview_url": "/api/projects/web1/preview/",
+            "issues": [],
+        },
+    )
+    file_manager = FileManager(base_dir=os.path.join(output_dir, "web1"))
+    file_manager.write_file("index.html", "<!doctype html><html></html>")
+
+    response = client.get("/api/projects/web1/preview/")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Project web1 is not preview-ready"
+
+
 def test_get_project_includes_profile_and_artifact_status(tmp_path, monkeypatch):
     client, state_store, output_dir = _make_client(tmp_path, monkeypatch)
     _create_web_project(state_store, output_dir)
@@ -168,3 +212,31 @@ def test_get_project_includes_profile_and_artifact_status(tmp_path, monkeypatch)
         "preview_url": "/api/projects/web1/preview/",
         "issues": [],
     }
+
+
+def test_create_project_passes_explicit_workflow_profile(tmp_path, monkeypatch):
+    client, state_store, output_dir = _make_client(tmp_path, monkeypatch)
+    calls = []
+
+    class RecordingOrchestrator:
+        def start_workflow(self, project_id, requirement, workflow_profile=None):
+            calls.append((project_id, requirement, workflow_profile))
+
+            async def _noop():
+                return None
+
+            return _noop()
+
+    monkeypatch.setattr(main, "orchestrator", RecordingOrchestrator())
+
+    response = client.post(
+        "/api/projects",
+        json={
+            "requirement": "Build a Python calculator",
+            "workflow_profile": "static_web",
+        },
+    )
+
+    assert response.status_code == 200
+    project_id = response.json()["project_id"]
+    assert calls == [(project_id, "Build a Python calculator", "static_web")]

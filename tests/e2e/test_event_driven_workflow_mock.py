@@ -19,6 +19,7 @@ from backend.core.plugin_registry import PluginRegistry
 from backend.core.state_store import StateStore, WorkflowState
 from backend.llm.client import LLMClient
 from backend.orchestrator.event_driven_orchestrator import EventDrivenOrchestrator
+from backend.orchestrator.state_machine import StateMachine
 from backend.orchestrator.websocket_manager import WebSocketManager
 from backend.tools.file_manager import FileManager
 
@@ -536,6 +537,7 @@ body {
         ]
         assert matching_messages
         assert matching_messages[-1]["artifact_status"]["preview_url"] == ""
+        assert matching_messages[-1]["iteration_count"] == project.iteration_count
 
         history = event_bus.get_history(project_id)
         iteration_events = [e for e in history if e.type == EventType.ITERATION_STARTED]
@@ -544,6 +546,29 @@ body {
         assert len(syntax_checked_events) == 1
     finally:
         app_settings.max_review_iterations = original_max_iterations
+
+
+@pytest.mark.asyncio
+async def test_workflow_state_message_uses_persisted_iteration_count(mock_deps):
+    """Workflow state messages expose the shared persisted retry counter."""
+    project_id = "mock-e2e-iteration-count"
+    orchestrator = mock_deps["orchestrator"]
+    state_store = mock_deps["state_store"]
+    ws_messages = mock_deps["ws_messages"]
+
+    state_store.create_project(project_id, "Build a static web app")
+    state_store.increment_iteration(project_id)
+    state_store.increment_iteration(project_id)
+    sm = StateMachine(max_iterations=3)
+    orchestrator._state_machines[project_id] = sm
+
+    await orchestrator._notify_workflow_state(project_id, sm)
+
+    workflow_messages = [
+        message for pid, message in ws_messages
+        if pid == project_id and message.get("type") == "workflow_state"
+    ]
+    assert workflow_messages[-1]["iteration_count"] == 2
 
 
 @pytest.mark.asyncio

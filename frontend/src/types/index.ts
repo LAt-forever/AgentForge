@@ -31,6 +31,7 @@ export interface ArtifactStatus {
     | 'missing_entry'
     | 'invalid_refs'
     | 'syntax_error'
+    | 'validation_unavailable'
     | 'unsafe_path'
     | 'error';
   preview_url: string;
@@ -52,6 +53,7 @@ const ARTIFACT_STATUSES: ReadonlySet<ArtifactStatus['status']> = new Set([
   'missing_entry',
   'invalid_refs',
   'syntax_error',
+  'validation_unavailable',
   'unsafe_path',
   'error',
 ]);

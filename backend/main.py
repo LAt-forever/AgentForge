@@ -20,6 +20,7 @@ from backend.core.plugin_registry import PluginRegistry
 from backend.agents.built_in import register_built_in_plugins
 from backend.orchestrator.websocket_manager import WebSocketManager
 from backend.orchestrator.event_driven_orchestrator import EventDrivenOrchestrator
+from backend.core.workflow_profiles import STATIC_WEB_PROFILE
 from backend.tools.file_manager import FileManager
 from backend.tools.git_manager import GitManager
 
@@ -132,7 +133,13 @@ async def create_project(request: CreateProjectRequest):
     """Create a new project and start the event-driven workflow."""
     project_id = str(uuid.uuid4())[:8]
     state_store.create_project(project_id, request.requirement)
-    asyncio.create_task(orchestrator.start_workflow(project_id, request.requirement))
+    asyncio.create_task(
+        orchestrator.start_workflow(
+            project_id,
+            request.requirement,
+            workflow_profile=request.workflow_profile,
+        )
+    )
     return CreateProjectResponse(project_id=project_id, state="planning")
 
 
@@ -172,7 +179,11 @@ def _get_preview_project(project_id: str):
     project = state_store.get_project(project_id)
     if project is None:
         raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
-    if project.artifact_status.get("status") != "ready":
+    if (
+        project.workflow_profile != STATIC_WEB_PROFILE
+        or project.artifact_status.get("type") != "static_web"
+        or project.artifact_status.get("status") != "ready"
+    ):
         raise HTTPException(
             status_code=409,
             detail=f"Project {project_id} is not preview-ready",

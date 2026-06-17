@@ -81,6 +81,21 @@ class TestWebArtifactValidator:
         assert result["issues"][0]["code"] == "missing_ref"
         assert result["issues"][0]["file"] == "index.html"
 
+    def test_invalid_referenced_javascript_fails(self, file_manager, validator):
+        file_manager.write_file(
+            "index.html",
+            '<!doctype html><html><body><script src="app.js"></script></body></html>',
+        )
+        file_manager.write_file("app.js", "function broken( {")
+
+        result = validator.validate()
+
+        assert result["status"] == "syntax_error"
+        assert result["preview_url"] == ""
+        assert result["issues"][0]["code"] == "syntax_error"
+        assert result["issues"][0]["file"] == "app.js"
+        assert result["issues"][0]["repairable"] is True
+
     def test_external_references_are_ignored(self, file_manager, validator):
         file_manager.write_file(
             "index.html",
