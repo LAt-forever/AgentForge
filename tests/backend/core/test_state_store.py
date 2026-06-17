@@ -35,6 +35,18 @@ class TestCreateAndGetProject:
         assert retrieved.id == "proj_1"
         assert retrieved.state == WorkflowState.IDLE
 
+    def test_create_project_has_workflow_profile_defaults(self, state_store):
+        """Created projects default to the standard workflow profile."""
+        project = state_store.create_project("proj_1", requirement="Build a CLI")
+
+        assert project.workflow_profile == "default"
+        assert project.artifact_status == {
+            "type": "none",
+            "status": "unknown",
+            "preview_url": "",
+            "issues": [],
+        }
+
 
 class TestUpdateState:
     """Test updating workflow state."""
@@ -66,6 +78,40 @@ class TestUpdateAgentStatus:
         assert project.agent_statuses["coder"]["detail"] == "coding"
 
 
+class TestUpdateWorkflowProfile:
+    """Test updating workflow profile metadata."""
+
+    def test_update_workflow_profile(self, state_store):
+        """Update workflow profile and verify it is persisted in state."""
+        state_store.create_project("proj_1")
+        before = state_store.get_project("proj_1").updated_at
+
+        state_store.update_workflow_profile("proj_1", "static_web")
+
+        project = state_store.get_project("proj_1")
+        assert project.workflow_profile == "static_web"
+        assert project.updated_at >= before
+
+
+class TestUpdateArtifactStatus:
+    """Test updating artifact validation status."""
+
+    def test_update_artifact_status(self, state_store):
+        """Update artifact status and verify it is persisted in state."""
+        state_store.create_project("proj_1")
+        status = {
+            "type": "web_artifact",
+            "status": "valid",
+            "preview_url": "/preview/proj_1/index.html",
+            "issues": [],
+        }
+
+        state_store.update_artifact_status("proj_1", status)
+
+        project = state_store.get_project("proj_1")
+        assert project.artifact_status == status
+
+
 class TestPersistence:
     """Test persistence across StateStore instances."""
 
@@ -76,6 +122,16 @@ class TestPersistence:
         store1.update_state("proj_1", WorkflowState.CODING)
         store1.update_agent_status("proj_1", "reviewer", {"status": "completed"})
         store1.update_output("proj_1", "design_doc", "design.md")
+        store1.update_workflow_profile("proj_1", "static_web")
+        store1.update_artifact_status(
+            "proj_1",
+            {
+                "type": "web_artifact",
+                "status": "invalid",
+                "preview_url": "",
+                "issues": ["missing index.html"],
+            },
+        )
         store1.increment_iteration("proj_1")
 
         # Create new store with same directory
@@ -86,6 +142,13 @@ class TestPersistence:
         assert project.state == WorkflowState.CODING
         assert project.agent_statuses["reviewer"]["status"] == "completed"
         assert project.outputs["design_doc"] == "design.md"
+        assert project.workflow_profile == "static_web"
+        assert project.artifact_status == {
+            "type": "web_artifact",
+            "status": "invalid",
+            "preview_url": "",
+            "issues": ["missing index.html"],
+        }
         assert project.iteration_count == 1
 
 
@@ -117,6 +180,13 @@ class TestListProjectsDetailed:
         assert by_id["p1"]["requirement"] == "build a calculator"
         assert by_id["p1"]["state"] == "idle"
         assert by_id["p2"]["state"] == "done"
+        assert by_id["p1"]["workflow_profile"] == "default"
+        assert by_id["p1"]["artifact_status"] == {
+            "type": "none",
+            "status": "unknown",
+            "preview_url": "",
+            "issues": [],
+        }
         assert "updated_at" in by_id["p1"]
         assert "requirement_preview" in by_id["p1"]
 

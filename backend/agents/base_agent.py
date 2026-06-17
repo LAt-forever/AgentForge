@@ -21,6 +21,17 @@ class AgentContext:
     review_feedback: str = ""  # Reviewer Agent output (for iteration)
     iteration: int = 0
     language: str = "python"  # target code generation language
+    workflow_profile: str = "default"
+    workflow_profile_display: str = "Default"
+    workflow_prompt_context: str = ""
+    artifact_status: dict = field(
+        default_factory=lambda: {
+            "type": "none",
+            "status": "unknown",
+            "preview_url": "",
+            "issues": [],
+        }
+    )
 
 
 @dataclass

@@ -8,6 +8,15 @@ from enum import Enum
 from typing import Optional
 
 
+def _default_artifact_status() -> dict:
+    return {
+        "type": "none",
+        "status": "unknown",
+        "preview_url": "",
+        "issues": [],
+    }
+
+
 class WorkflowState(Enum):
     """States of the overall workflow."""
 
@@ -41,6 +50,8 @@ class ProjectState:
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     outputs: dict = field(default_factory=dict)
+    workflow_profile: str = "default"
+    artifact_status: dict = field(default_factory=_default_artifact_status)
 
     def to_dict(self) -> dict:
         """Serialize to a dictionary."""
@@ -54,6 +65,8 @@ class ProjectState:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "outputs": self.outputs,
+            "workflow_profile": self.workflow_profile,
+            "artifact_status": self.artifact_status,
         }
 
     @classmethod
@@ -69,6 +82,8 @@ class ProjectState:
             created_at=data.get("created_at", datetime.now(timezone.utc).isoformat()),
             updated_at=data.get("updated_at", datetime.now(timezone.utc).isoformat()),
             outputs=data.get("outputs", {}),
+            workflow_profile=data.get("workflow_profile", "default"),
+            artifact_status=data.get("artifact_status", _default_artifact_status()),
         )
 
 
@@ -141,6 +156,20 @@ class StateStore:
         project.updated_at = datetime.now(timezone.utc).isoformat()
         self._save(project_id)
 
+    def update_workflow_profile(self, project_id: str, profile: str) -> None:
+        """Update the workflow profile for a project."""
+        project = self._cache[project_id]
+        project.workflow_profile = profile
+        project.updated_at = datetime.now(timezone.utc).isoformat()
+        self._save(project_id)
+
+    def update_artifact_status(self, project_id: str, status: dict) -> None:
+        """Update artifact validation and preview status for a project."""
+        project = self._cache[project_id]
+        project.artifact_status = status
+        project.updated_at = datetime.now(timezone.utc).isoformat()
+        self._save(project_id)
+
     def list_projects(self) -> list[str]:
         """List all project IDs in the store."""
         return list(self._cache.keys())
@@ -157,6 +186,8 @@ class StateStore:
                     "requirement": requirement,
                     "requirement_preview": requirement[:50],
                     "iteration_count": project.iteration_count,
+                    "workflow_profile": project.workflow_profile,
+                    "artifact_status": project.artifact_status,
                     "created_at": project.created_at,
                     "updated_at": project.updated_at,
                 }
