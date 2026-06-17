@@ -455,21 +455,25 @@ class EventDrivenOrchestrator:
 
         review_passed = event.payload.get("metadata", {}).get("passed", False)
 
-        if not review_passed and self._start_repair_iteration(
-            project_id,
-            context,
-            event.payload.get("output", ""),
+        if (
+            not review_passed
+            and sm.can_iterate()
+            and self._can_start_repair_iteration(project_id)
         ):
-            # Transition back to CODING
-            sm.transition_to(WorkflowState.CODING)
-            self.state_store.update_state(project_id, WorkflowState.CODING)
-            await self._notify_workflow_state(project_id, sm)
+            transitioned = sm.transition_to(WorkflowState.CODING)
+            if transitioned and self._start_repair_iteration(
+                project_id,
+                context,
+                event.payload.get("output", ""),
+            ):
+                self.state_store.update_state(project_id, WorkflowState.CODING)
+                await self._notify_workflow_state(project_id, sm)
 
-            return Event(
-                type=EventType.ITERATION_STARTED,
-                project_id=project_id,
-                payload={"reason": "review_feedback", "review": event.payload.get("output", "")},
-            )
+                return Event(
+                    type=EventType.ITERATION_STARTED,
+                    project_id=project_id,
+                    payload={"reason": "review_feedback", "review": event.payload.get("output", "")},
+                )
 
         # Workflow complete
         sm.transition_to(WorkflowState.DONE)
@@ -516,10 +520,7 @@ class EventDrivenOrchestrator:
     ) -> bool:
         """Consume shared retry budget for repair iterations before re-running coder."""
         project = self.state_store.get_project(project_id)
-        sm = self._state_machines.get(project_id)
-        if project is None or sm is None:
-            return False
-        if project.iteration_count >= sm.max_iterations:
+        if project is None or not self._can_start_repair_iteration(project_id):
             return False
 
         self.state_store.increment_iteration(project_id)
@@ -527,6 +528,14 @@ class EventDrivenOrchestrator:
         context.review_feedback = review_feedback
         context.iteration = updated_project.iteration_count if updated_project else project.iteration_count + 1
         return True
+
+    def _can_start_repair_iteration(self, project_id: str) -> bool:
+        """Return whether shared persisted retry budget remains for repair loops."""
+        project = self.state_store.get_project(project_id)
+        sm = self._state_machines.get(project_id)
+        if project is None or sm is None:
+            return False
+        return project.iteration_count < sm.max_iterations
 
     async def _transition_state(
         self, project_id: str, sm: StateMachine, plugin: AgentPlugin, output: AgentOutput

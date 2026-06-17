@@ -544,3 +544,74 @@ body {
         assert len(syntax_checked_events) == 1
     finally:
         app_settings.max_review_iterations = original_max_iterations
+
+
+@pytest.mark.asyncio
+async def test_review_feedback_respects_exhausted_retry_budget(mock_deps):
+    """A final failed review should complete instead of emitting another retry."""
+    project_id = "mock-e2e-review-budget"
+    orchestrator = mock_deps["orchestrator"]
+    state_store = mock_deps["state_store"]
+    event_bus = mock_deps["event_bus"]
+
+    original_max_iterations = app_settings.max_review_iterations
+    app_settings.max_review_iterations = 1
+
+    class AlwaysFailingReviewer:
+        name = "reviewer"
+        consumes = [EventType.SYNTAX_CHECKED]
+        produces = EventType.REVIEW_COMPLETED
+
+        async def execute(self, context, event):
+            from backend.agents.base_agent import AgentOutput
+
+            return AgentOutput(
+                content='{"passed": false, "issues": [{"severity": "error", "message": "Still broken"}], "summary": "Needs fix"}',
+                metadata={"passed": False},
+            )
+
+    orchestrator.registry._plugins["reviewer"] = AlwaysFailingReviewer()
+
+    completion_event = asyncio.Event()
+    error_event = asyncio.Event()
+
+    async def on_complete(event):
+        if event.project_id == project_id:
+            completion_event.set()
+
+    async def on_error(event):
+        if event.project_id == project_id:
+            error_event.set()
+
+    event_bus.subscribe(EventType.WORKFLOW_COMPLETED, on_complete)
+    event_bus.subscribe(EventType.ERROR, on_error)
+
+    try:
+        await orchestrator.start_workflow(project_id, "Build a hello world CLI")
+
+        done, pending = await asyncio.wait(
+            [
+                asyncio.create_task(completion_event.wait()),
+                asyncio.create_task(error_event.wait()),
+            ],
+            timeout=30,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        assert completion_event.is_set(), "Exhausted review-budget workflow did not complete"
+        assert not error_event.is_set(), "Exhausted review-budget workflow hit an error"
+
+        project = state_store.get_project(project_id)
+        assert project is not None
+        assert project.state == WorkflowState.DONE
+        assert project.iteration_count == 0
+
+        history = event_bus.get_history(project_id)
+        review_feedback_iterations = [
+            e for e in history
+            if e.type == EventType.ITERATION_STARTED
+            and e.payload.get("reason") == "review_feedback"
+        ]
+        assert review_feedback_iterations == []
+    finally:
+        app_settings.max_review_iterations = original_max_iterations
