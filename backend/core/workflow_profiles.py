@@ -1,5 +1,7 @@
 """Workflow profile definitions and requirement-based resolution."""
 
+import re
+from copy import deepcopy
 from dataclasses import dataclass
 
 DEFAULT_PROFILE = "default"
@@ -75,7 +77,42 @@ _STATIC_WEB_TERMS = (
     "网页",
     "静态网页",
     "静态网站",
+    "页面",
+    "前端",
+    "浏览器",
+    "网站",
+    "落地页",
+    "计时器",
+    "计算器",
+    "调色板",
+    "仪表盘",
+    "表单",
+)
+
+_ASCII_STATIC_WEB_TERMS = (
+    "static web",
+    "static website",
+    "landing page",
+    "web",
+    "page",
+    "html",
+    "css",
+    "js",
+    "javascript",
+    "frontend",
+    "browser",
+    "website",
+    "timer",
+    "calculator",
+    "palette",
+    "dashboard",
+    "form",
+)
+
+_CJK_STATIC_WEB_TERMS = (
     "网页",
+    "静态网页",
+    "静态网站",
     "页面",
     "前端",
     "浏览器",
@@ -91,7 +128,15 @@ _STATIC_WEB_TERMS = (
 
 def get_workflow_profile(name: str | None) -> WorkflowProfile:
     """Return a workflow profile, falling back to default for unknown names."""
-    return _PROFILES.get(name or DEFAULT_PROFILE, _PROFILES[DEFAULT_PROFILE])
+    profile = _PROFILES.get(name or DEFAULT_PROFILE, _PROFILES[DEFAULT_PROFILE])
+    return WorkflowProfile(
+        name=profile.name,
+        display_name=profile.display_name,
+        agent_labels=deepcopy(profile.agent_labels),
+        prompt_context=profile.prompt_context,
+        validators=tuple(profile.validators),
+        preview_enabled=profile.preview_enabled,
+    )
 
 
 def resolve_workflow_profile(
@@ -102,6 +147,13 @@ def resolve_workflow_profile(
         return get_workflow_profile(explicit)
 
     normalized = requirement.lower()
-    if any(term in normalized for term in _STATIC_WEB_TERMS):
+    if _matches_static_web_requirement(normalized):
         return get_workflow_profile(STATIC_WEB_PROFILE)
     return get_workflow_profile(DEFAULT_PROFILE)
+
+
+def _matches_static_web_requirement(requirement: str) -> bool:
+    for term in _ASCII_STATIC_WEB_TERMS:
+        if re.search(r"\b" + re.escape(term) + r"\b", requirement):
+            return True
+    return any(term in requirement for term in _CJK_STATIC_WEB_TERMS)

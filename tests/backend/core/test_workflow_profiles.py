@@ -52,6 +52,15 @@ class TestGetWorkflowProfile:
 
         assert profile.name == DEFAULT_PROFILE
 
+    def test_returned_profile_agent_labels_are_isolated(self):
+        """Mutating one returned profile does not affect later calls."""
+        profile = get_workflow_profile(STATIC_WEB_PROFILE)
+        profile.agent_labels["coder"] = "Mutated"
+
+        later_profile = get_workflow_profile(STATIC_WEB_PROFILE)
+
+        assert later_profile.agent_labels["coder"] == "Frontend Build"
+
 
 class TestResolveWorkflowProfile:
     """Test workflow profile selection."""
@@ -88,3 +97,15 @@ class TestResolveWorkflowProfile:
         )
 
         assert profile.name == STATIC_WEB_PROFILE
+
+    def test_webhook_does_not_match_web_term(self):
+        """Short ASCII web terms do not match inside unrelated words."""
+        profile = resolve_workflow_profile("Build a webhook receiver")
+
+        assert profile.name == DEFAULT_PROFILE
+
+    def test_json_formatter_does_not_match_js_or_form_terms(self):
+        """Short ASCII terms do not match inside json or formatter."""
+        profile = resolve_workflow_profile("Build a JSON formatter CLI")
+
+        assert profile.name == DEFAULT_PROFILE
