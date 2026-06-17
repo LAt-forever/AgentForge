@@ -130,6 +130,28 @@ class TestUpdateArtifactStatus:
         project = state_store.get_project("proj_1")
         assert project.artifact_status == status
 
+    def test_update_artifact_status_defensively_copies_input(self, state_store):
+        """Mutating the input status after update does not alter stored state."""
+        state_store.create_project("proj_1")
+        status = {
+            "type": "web_artifact",
+            "status": "valid",
+            "preview_url": "/preview/proj_1/index.html",
+            "issues": ["missing alt text"],
+        }
+
+        state_store.update_artifact_status("proj_1", status)
+        status["status"] = "invalid"
+        status["issues"].append("missing title")
+
+        project = state_store.get_project("proj_1")
+        assert project.artifact_status == {
+            "type": "web_artifact",
+            "status": "valid",
+            "preview_url": "/preview/proj_1/index.html",
+            "issues": ["missing alt text"],
+        }
+
 
 class TestPersistence:
     """Test persistence across StateStore instances."""
@@ -218,6 +240,31 @@ class TestListProjectsDetailed:
 
         detailed = state_store.list_projects_detailed()
         assert detailed[0]["project_id"] == "new"
+
+    def test_list_projects_detailed_returns_copied_artifact_status(self, state_store):
+        """Mutating detailed-list results does not alter cached project state."""
+        state_store.create_project("proj_1", "build a web page")
+        state_store.update_artifact_status(
+            "proj_1",
+            {
+                "type": "web_artifact",
+                "status": "valid",
+                "preview_url": "/preview/proj_1/index.html",
+                "issues": ["missing alt text"],
+            },
+        )
+
+        detailed = state_store.list_projects_detailed()
+        detailed[0]["artifact_status"]["status"] = "invalid"
+        detailed[0]["artifact_status"]["issues"].append("missing title")
+
+        project = state_store.get_project("proj_1")
+        assert project.artifact_status == {
+            "type": "web_artifact",
+            "status": "valid",
+            "preview_url": "/preview/proj_1/index.html",
+            "issues": ["missing alt text"],
+        }
 
 
 class TestIncrementIteration:

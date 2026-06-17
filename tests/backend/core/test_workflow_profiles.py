@@ -17,7 +17,12 @@ class TestGetWorkflowProfile:
 
         assert profile.name == DEFAULT_PROFILE
         assert profile.display_name == "Default"
-        assert profile.stage_labels == ("PM", "Architect", "Coder", "Reviewer")
+        assert profile.agent_labels == {
+            "pm": "PM",
+            "architect": "Architect",
+            "coder": "Coder",
+            "reviewer": "Reviewer",
+        }
         assert profile.prompt_context == ""
         assert profile.validators == ()
         assert profile.preview_enabled is False
@@ -28,12 +33,10 @@ class TestGetWorkflowProfile:
 
         assert profile.name == STATIC_WEB_PROFILE
         assert profile.display_name == "Web App"
-        assert profile.stage_labels == (
-            "Product Brief",
-            "Web Structure",
-            "Frontend Build",
-            "Web Review",
-        )
+        assert profile.agent_labels["pm"] == "Product Brief"
+        assert profile.agent_labels["architect"] == "Web Structure"
+        assert profile.agent_labels["coder"] == "Frontend Build"
+        assert profile.agent_labels["reviewer"] == "Web Review"
         assert "browser-ready static files" in profile.prompt_context
         assert "index.html" in profile.prompt_context
         assert "style.css" in profile.prompt_context
@@ -55,15 +58,13 @@ class TestResolveWorkflowProfile:
 
     def test_resolves_static_web_for_english_requirement(self):
         """English static-web terms select the web app workflow."""
-        profile = resolve_workflow_profile(
-            "Build a browser-based landing page with HTML, CSS, and JavaScript."
-        )
+        profile = resolve_workflow_profile("Build a pomodoro timer web page")
 
         assert profile.name == STATIC_WEB_PROFILE
 
     def test_resolves_static_web_for_chinese_requirement(self):
         """Chinese static-web terms select the web app workflow."""
-        profile = resolve_workflow_profile("请帮我做一个静态网页，用 HTML/CSS/JS 实现。")
+        profile = resolve_workflow_profile("做一个颜色调色板网页")
 
         assert profile.name == STATIC_WEB_PROFILE
 

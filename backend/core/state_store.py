@@ -1,5 +1,6 @@
 """State Store for persisting project and agent state."""
 
+import copy
 import json
 import os
 from dataclasses import dataclass, field
@@ -68,7 +69,7 @@ class ProjectState:
             "updated_at": self.updated_at,
             "outputs": self.outputs,
             "workflow_profile": self.workflow_profile,
-            "artifact_status": self.artifact_status,
+            "artifact_status": copy.deepcopy(self.artifact_status),
         }
 
     @classmethod
@@ -85,7 +86,9 @@ class ProjectState:
             updated_at=data.get("updated_at", datetime.now(timezone.utc).isoformat()),
             outputs=data.get("outputs", {}),
             workflow_profile=data.get("workflow_profile", DEFAULT_PROFILE),
-            artifact_status=data.get("artifact_status", _default_artifact_status()),
+            artifact_status=copy.deepcopy(
+                data.get("artifact_status", _default_artifact_status())
+            ),
         )
 
 
@@ -168,7 +171,7 @@ class StateStore:
     def update_artifact_status(self, project_id: str, status: dict) -> None:
         """Update artifact validation and preview status for a project."""
         project = self._cache[project_id]
-        project.artifact_status = status
+        project.artifact_status = copy.deepcopy(status)
         project.updated_at = datetime.now(timezone.utc).isoformat()
         self._save(project_id)
 
@@ -189,7 +192,7 @@ class StateStore:
                     "requirement_preview": requirement[:50],
                     "iteration_count": project.iteration_count,
                     "workflow_profile": project.workflow_profile,
-                    "artifact_status": project.artifact_status,
+                    "artifact_status": copy.deepcopy(project.artifact_status),
                     "created_at": project.created_at,
                     "updated_at": project.updated_at,
                 }

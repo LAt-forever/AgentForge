@@ -12,20 +12,25 @@ class WorkflowProfile:
 
     name: str
     display_name: str
-    stage_labels: tuple[str, str, str, str]
+    agent_labels: dict[str, str]
     prompt_context: str = ""
     validators: tuple[str, ...] = ()
     preview_enabled: bool = False
 
 
-_DEFAULT_STAGE_LABELS = ("PM", "Architect", "Coder", "Reviewer")
+_DEFAULT_AGENT_LABELS = {
+    "pm": "PM",
+    "architect": "Architect",
+    "coder": "Coder",
+    "reviewer": "Reviewer",
+}
 
-_STATIC_WEB_STAGE_LABELS = (
-    "Product Brief",
-    "Web Structure",
-    "Frontend Build",
-    "Web Review",
-)
+_STATIC_WEB_AGENT_LABELS = {
+    "pm": "Product Brief",
+    "architect": "Web Structure",
+    "coder": "Frontend Build",
+    "reviewer": "Web Review",
+}
 
 _STATIC_WEB_PROMPT_CONTEXT = (
     "Create browser-ready static files index.html, style.css, and script.js. "
@@ -37,12 +42,12 @@ _PROFILES = {
     DEFAULT_PROFILE: WorkflowProfile(
         name=DEFAULT_PROFILE,
         display_name="Default",
-        stage_labels=_DEFAULT_STAGE_LABELS,
+        agent_labels=_DEFAULT_AGENT_LABELS,
     ),
     STATIC_WEB_PROFILE: WorkflowProfile(
         name=STATIC_WEB_PROFILE,
         display_name="Web App",
-        stage_labels=_STATIC_WEB_STAGE_LABELS,
+        agent_labels=_STATIC_WEB_AGENT_LABELS,
         prompt_context=_STATIC_WEB_PROMPT_CONTEXT,
         validators=("web_artifact",),
         preview_enabled=True,
@@ -62,6 +67,11 @@ _STATIC_WEB_TERMS = (
     "frontend",
     "browser",
     "website",
+    "timer",
+    "calculator",
+    "palette",
+    "dashboard",
+    "form",
     "网页",
     "静态网页",
     "静态网站",
@@ -71,6 +81,10 @@ _STATIC_WEB_TERMS = (
     "浏览器",
     "网站",
     "落地页",
+    "计时器",
+    "计算器",
+    "调色板",
+    "表单",
 )
 
 
