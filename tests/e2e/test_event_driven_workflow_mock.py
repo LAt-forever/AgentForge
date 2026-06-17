@@ -28,10 +28,15 @@ class FakeLLMClient(LLMClient):
 
     def __init__(self):
         # Bypass parent init (no real keys needed)
-        pass
+        self.calls = []
 
     async def call(self, prompt, config):
         from backend.llm.models import LLMResponse
+
+        self.calls.append({
+            "prompt": prompt,
+            "system_prompt": config.system_prompt,
+        })
 
         sys = config.system_prompt.lower()
         if "product manager" in sys:
@@ -82,6 +87,7 @@ def mock_deps(tmp_path_factory):
         "state_store": state_store,
         "orchestrator": orchestrator,
         "event_bus": event_bus,
+        "llm_client": llm_client,
     }
 
     shutil.rmtree(output_dir, ignore_errors=True)
@@ -261,3 +267,136 @@ async def test_mock_follow_up_triggers_iteration(mock_deps):
         if e.type == EventType.ITERATION_STARTED and e.payload.get("reason") == "user_followup"
     ]
     assert len(followup_events) >= 1
+
+
+@pytest.mark.asyncio
+async def test_static_web_workflow_profile_completes(mock_deps):
+    """Static web requirements use the web workflow profile and validator."""
+    project_id = "mock-e2e-static-web"
+    orchestrator = mock_deps["orchestrator"]
+    state_store = mock_deps["state_store"]
+    output_dir = mock_deps["output_dir"]
+    event_bus = mock_deps["event_bus"]
+    llm_client = mock_deps["llm_client"]
+
+    async def static_web_call(prompt, config):
+        from backend.llm.models import LLMResponse
+
+        llm_client.calls.append({
+            "prompt": prompt,
+            "system_prompt": config.system_prompt,
+        })
+
+        sys = config.system_prompt.lower()
+        lowered_prompt = prompt.lower()
+        if "product manager" in sys:
+            assert "browser-ready static files" in lowered_prompt
+            assert "index.html" in lowered_prompt
+            return LLMResponse(
+                content="# Spec\n\nBuild an interactive pomodoro web page.",
+                model="mock",
+            )
+        if "system architect" in sys or ("architect" in sys and "developer" not in sys):
+            assert "browser-ready static files" in lowered_prompt
+            return LLMResponse(
+                content="# Architecture\n\nFiles: index.html, style.css, script.js",
+                model="mock",
+            )
+        if "software developer" in sys or "developer" in sys:
+            assert "index.html" in lowered_prompt
+            assert "interactive web page" in lowered_prompt
+            return LLMResponse(content="""### FILE: index.html
+```html
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>番茄钟</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <h1>番茄钟</h1>
+      <p id="status">准备开始</p>
+      <button id="toggle" type="button">开始</button>
+    </main>
+    <script src="script.js"></script>
+  </body>
+</html>
+```
+
+### FILE: style.css
+```css
+body {
+  font-family: sans-serif;
+}
+```
+
+### FILE: script.js
+```javascript
+const status = document.getElementById("status");
+const toggle = document.getElementById("toggle");
+let running = false;
+
+toggle.addEventListener("click", () => {
+  running = !running;
+  status.textContent = running ? "专注中" : "准备开始";
+  toggle.textContent = running ? "暂停" : "开始";
+});
+```
+""", model="mock")
+        if "code reviewer" in sys or "reviewer" in sys:
+            assert "browser-ready static files" in lowered_prompt
+            assert "index.html" in lowered_prompt
+            assert "style.css" in lowered_prompt
+            return LLMResponse(
+                content='{"passed": true, "issues": [], "summary": "LGTM"}',
+                model="mock",
+            )
+        return LLMResponse(content="OK", model="mock")
+
+    llm_client.call = static_web_call
+
+    completion_event = asyncio.Event()
+    error_event = asyncio.Event()
+
+    async def on_complete(event):
+        if event.project_id == project_id:
+            completion_event.set()
+
+    async def on_error(event):
+        if event.project_id == project_id:
+            error_event.set()
+
+    event_bus.subscribe(EventType.WORKFLOW_COMPLETED, on_complete)
+    event_bus.subscribe(EventType.ERROR, on_error)
+
+    await orchestrator.start_workflow(project_id, "做一个番茄钟网页工具")
+
+    done, pending = await asyncio.wait(
+        [
+            asyncio.create_task(completion_event.wait()),
+            asyncio.create_task(error_event.wait()),
+        ],
+        timeout=30,
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+
+    assert completion_event.is_set(), "Static web workflow did not complete (or errored)"
+    assert not error_event.is_set(), "Static web workflow hit an error"
+
+    project = state_store.get_project(project_id)
+    assert project is not None
+    assert project.state == WorkflowState.DONE
+    assert project.workflow_profile == "static_web"
+    assert project.artifact_status["status"] == "ready"
+    assert (
+        project.artifact_status["preview_url"]
+        == f"/api/projects/{project_id}/preview/"
+    )
+
+    fm = FileManager(base_dir=os.path.join(output_dir, project_id))
+    assert fm.exists("index.html")
+    assert fm.exists("style.css")
+    assert fm.exists("script.js")

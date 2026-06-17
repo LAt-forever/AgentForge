@@ -32,7 +32,9 @@ class ReviewerAgent(BaseAgent):
         actual_files = fm.list_files()
 
         # Filter to code files + requirements/spec for context
-        code_extensions = (".py", ".js", ".ts", ".go", ".rs", ".java", ".cpp", ".c", ".h")
+        code_extensions = (
+            ".py", ".js", ".ts", ".go", ".rs", ".java", ".cpp", ".c", ".h", ".html", ".css"
+        )
         review_files = [
             f for f in actual_files
             if f.endswith(code_extensions) or f in ("requirements.txt", "README.md")
@@ -77,14 +79,19 @@ class ReviewerAgent(BaseAgent):
 
         analysis_section = self._run_static_analysis(context.project_id, review_files)
 
-        user_prompt = (
-            f"Functional Specification:\n{context.spec}\n\n"
-            f"Architecture:\n{context.architecture}\n\n"
-            f"Code Files:\n{code_text}"
-            f"{analysis_section}\n\n"
-            f"Important: Code files ARE provided above. Do NOT say 'no code files provided'. "
-            f"Review the actual code for completeness, correctness, and quality."
-        )
+        user_prompt_parts = []
+        if context.workflow_prompt_context:
+            user_prompt_parts.append(f"Workflow Context:\n{context.workflow_prompt_context}")
+        user_prompt_parts.extend([
+            f"Functional Specification:\n{context.spec}",
+            f"Architecture:\n{context.architecture}",
+            f"Code Files:\n{code_text}{analysis_section}",
+            (
+                "Important: Code files ARE provided above. Do NOT say 'no code files "
+                "provided'. Review the actual code for completeness, correctness, and quality."
+            ),
+        ])
+        user_prompt = "\n\n".join(user_prompt_parts)
 
         review_response = await self._call_llm(
             system_prompt=system_prompt,

@@ -21,9 +21,15 @@ class CoderAgent(BaseAgent):
             f"IMPORTANT: The entry-point file (e.g. main.py, app.py, index.ts) must be directly executable. "
             f"Do NOT use relative imports (e.g. `from .config import ...`) in the entry-point file. "
             f"Use inline constants, absolute imports, or `sys.path` manipulation instead.",
+        ]
+        if context.workflow_prompt_context:
+            user_prompt_parts.append(
+                f"Workflow Context:\n{context.workflow_prompt_context}"
+            )
+        user_prompt_parts.extend([
             f"Functional Specification:\n{context.spec}",
             f"\nArchitecture:\n{context.architecture}",
-        ]
+        ])
 
         if context.review_feedback:
             user_prompt_parts.append(
