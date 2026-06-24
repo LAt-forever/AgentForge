@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from backend.config import settings
@@ -19,6 +20,7 @@ from backend.core.plugin_registry import PluginRegistry
 from backend.agents.built_in import register_built_in_plugins
 from backend.orchestrator.websocket_manager import WebSocketManager
 from backend.orchestrator.event_driven_orchestrator import EventDrivenOrchestrator
+from backend.core.workflow_profiles import STATIC_WEB_PROFILE
 from backend.tools.file_manager import FileManager
 from backend.tools.git_manager import GitManager
 
@@ -100,6 +102,7 @@ app.add_middleware(
 
 class CreateProjectRequest(BaseModel):
     requirement: str
+    workflow_profile: str | None = None
 
 
 class CreateProjectResponse(BaseModel):
@@ -113,6 +116,8 @@ class ProjectStatusResponse(BaseModel):
     agent_statuses: dict
     iteration_count: int
     outputs: dict
+    workflow_profile: str
+    artifact_status: dict
 
 
 class FollowUpRequest(BaseModel):
@@ -128,7 +133,13 @@ async def create_project(request: CreateProjectRequest):
     """Create a new project and start the event-driven workflow."""
     project_id = str(uuid.uuid4())[:8]
     state_store.create_project(project_id, request.requirement)
-    asyncio.create_task(orchestrator.start_workflow(project_id, request.requirement))
+    asyncio.create_task(
+        orchestrator.start_workflow(
+            project_id,
+            request.requirement,
+            workflow_profile=request.workflow_profile,
+        )
+    )
     return CreateProjectResponse(project_id=project_id, state="planning")
 
 
@@ -144,7 +155,87 @@ async def get_project(project_id: str):
         agent_statuses=project.agent_statuses,
         iteration_count=project.iteration_count,
         outputs=project.outputs,
+        workflow_profile=project.workflow_profile,
+        artifact_status=project.artifact_status,
     )
+
+
+_PREVIEW_MEDIA_TYPES = {
+    ".html": "text/html",
+    ".css": "text/css",
+    ".js": "application/javascript",
+    ".json": "application/json",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".txt": "text/plain",
+}
+
+
+def _get_preview_project(project_id: str):
+    project = state_store.get_project(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    if (
+        project.workflow_profile != STATIC_WEB_PROFILE
+        or project.artifact_status.get("type") != "static_web"
+        or project.artifact_status.get("status") != "ready"
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Project {project_id} is not preview-ready",
+        )
+    return project
+
+
+def _serve_preview_file(project_id: str, file_path: str):
+    _get_preview_project(project_id)
+    normalized = file_path or "index.html"
+    parts = [part for part in normalized.split("/") if part]
+    if any(part == ".." or part.startswith(".") for part in parts):
+        raise HTTPException(status_code=403, detail="Preview path is not allowed")
+
+    extension = os.path.splitext(normalized)[1].lower()
+    media_type = _PREVIEW_MEDIA_TYPES.get(extension)
+    if media_type is None:
+        raise HTTPException(status_code=403, detail="Preview file type is not allowed")
+
+    file_manager = FileManager(base_dir=os.path.join(settings.output_dir, project_id))
+    try:
+        abs_path = file_manager.get_absolute_path(normalized)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail="Preview path is not allowed",
+        ) from exc
+
+    project_root = os.path.realpath(os.path.join(settings.output_dir, project_id))
+    real_path = os.path.realpath(abs_path)
+    if not real_path.startswith(project_root + os.sep) and real_path != project_root:
+        raise HTTPException(status_code=403, detail="Preview path is not allowed")
+
+    if not os.path.isfile(abs_path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Preview file {normalized} not found",
+        )
+
+    return FileResponse(abs_path, media_type=media_type)
+
+
+@app.get("/api/projects/{project_id}/preview/")
+async def get_project_preview_index(project_id: str):
+    """Serve the preview entrypoint for a ready static web artifact."""
+    return _serve_preview_file(project_id, "")
+
+
+@app.get("/api/projects/{project_id}/preview/{file_path:path}")
+async def get_project_preview_file(project_id: str, file_path: str):
+    """Serve a preview asset for a ready static web artifact."""
+    return _serve_preview_file(project_id, file_path)
 
 
 @app.get("/api/projects/{project_id}/files")

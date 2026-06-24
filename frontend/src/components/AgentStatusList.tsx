@@ -16,6 +16,13 @@ const AGENTS: AgentMeta[] = [
   { key: 'reviewer', label: 'Reviewer', color: 'var(--agent-reviewer)', idleDesc: 'Awaiting code implementation.' },
 ];
 
+const WEB_LABELS: Record<string, string> = {
+  pm: 'Product Brief',
+  architect: 'Web Structure',
+  coder: 'Frontend Build',
+  reviewer: 'Web Review',
+};
+
 const BADGE: Record<string, { text: string; fg: string; bg: string }> = {
   running: { text: 'Running', fg: 'var(--accent-blue)', bg: 'rgba(88,166,255,0.15)' },
   completed: { text: 'Done', fg: 'var(--accent-green)', bg: 'rgba(63,185,80,0.15)' },
@@ -42,10 +49,11 @@ const AgentRow: React.FC<{ meta: AgentMeta; status?: AgentStatus }> = ({ meta, s
         boxShadow: isRunning ? '0 0 0 1px var(--accent-blue)' : 'none',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', gap: '8px' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
           <span
             style={{
+              flexShrink: 0,
               fontSize: '10px',
               fontWeight: 700,
               padding: '2px 6px',
@@ -57,7 +65,17 @@ const AgentRow: React.FC<{ meta: AgentMeta; status?: AgentStatus }> = ({ meta, s
           >
             {meta.label.slice(0, 4)}
           </span>
-          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
+          <span
+            style={{
+              minWidth: 0,
+              fontSize: '13px',
+              fontWeight: 600,
+              color: 'var(--text-primary)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
             {meta.label}
           </span>
         </span>
@@ -103,6 +121,8 @@ const AgentRow: React.FC<{ meta: AgentMeta; status?: AgentStatus }> = ({ meta, s
 export const AgentStatusList: React.FC = () => {
   const agentStatuses = useStore((s) => s.agentStatuses);
   const workflowState = useStore((s) => s.workflowState);
+  const currentProject = useStore((s) => s.currentProject);
+  const isWebApp = currentProject?.workflow_profile === 'static_web';
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -117,12 +137,13 @@ export const AgentStatusList: React.FC = () => {
           borderBottom: '1px solid var(--border-color)',
         }}
       >
-        Agents
+        {isWebApp ? 'Web App Agents' : 'Agents'}
       </div>
       <div style={{ flex: 1, overflow: 'auto', padding: '12px' }}>
-        {AGENTS.map((meta) => (
-          <AgentRow key={meta.key} meta={meta} status={agentStatuses[meta.key]} />
-        ))}
+        {AGENTS.map((meta) => {
+          const label = isWebApp && WEB_LABELS[meta.key] ? WEB_LABELS[meta.key] : meta.label;
+          return <AgentRow key={meta.key} meta={{ ...meta, label }} status={agentStatuses[meta.key]} />;
+        })}
         {workflowState && workflowState.iteration_count > 0 && (
           <div
             style={{

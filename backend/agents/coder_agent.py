@@ -15,15 +15,28 @@ class CoderAgent(BaseAgent):
     async def run(self, context: AgentContext) -> AgentOutput:
         """Generate code from spec and architecture."""
         system_prompt = self._load_prompt("coder")
-        language = context.language or "python"
-        user_prompt_parts = [
-            f"Target language: {language}. Generate all code in {language}.",
-            f"IMPORTANT: The entry-point file (e.g. main.py, app.py, index.ts) must be directly executable. "
-            f"Do NOT use relative imports (e.g. `from .config import ...`) in the entry-point file. "
-            f"Use inline constants, absolute imports, or `sys.path` manipulation instead.",
+        if context.workflow_profile == "static_web":
+            user_prompt_parts = [
+                "Target artifact: browser-ready HTML/CSS/JavaScript files.",
+                "Use index.html as the entry point, plus style.css and script.js when needed.",
+                "IMPORTANT: index.html must reference only local project files. Avoid external/CDN runtime dependencies.",
+            ]
+        else:
+            language = context.language or "python"
+            user_prompt_parts = [
+                f"Target language: {language}. Generate all code in {language}.",
+                f"IMPORTANT: The entry-point file (e.g. main.py, app.py, index.ts) must be directly executable. "
+                f"Do NOT use relative imports (e.g. `from .config import ...`) in the entry-point file. "
+                f"Use inline constants, absolute imports, or `sys.path` manipulation instead.",
+            ]
+        if context.workflow_prompt_context:
+            user_prompt_parts.append(
+                f"Workflow Context:\n{context.workflow_prompt_context}"
+            )
+        user_prompt_parts.extend([
             f"Functional Specification:\n{context.spec}",
             f"\nArchitecture:\n{context.architecture}",
-        ]
+        ])
 
         if context.review_feedback:
             user_prompt_parts.append(

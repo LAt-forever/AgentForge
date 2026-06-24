@@ -17,6 +17,7 @@ Backwards compatibility:
 
 import logging
 import os
+from copy import deepcopy
 
 from backend.agents.base_agent import AgentContext, AgentOutput
 from backend.agents.plugin_base import AgentPlugin
@@ -24,11 +25,13 @@ from backend.config import settings
 from backend.core.event_bus import Event, EventBus, EventType
 from backend.core.plugin_registry import PluginRegistry
 from backend.core.state_store import StateStore, WorkflowState
+from backend.core.workflow_profiles import get_workflow_profile, resolve_workflow_profile
 from backend.orchestrator.state_machine import StateMachine
 from backend.orchestrator.websocket_manager import WebSocketManager
 from backend.tools.code_runner import CodeRunner
 from backend.tools.file_manager import FileManager
 from backend.tools.git_manager import GitManager
+from backend.tools.web_artifact_validator import WebArtifactValidator
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +89,12 @@ class EventDrivenOrchestrator:
     # Public API
     # ------------------------------------------------------------------
 
-    async def start_workflow(self, project_id: str, requirement: str) -> None:
+    async def start_workflow(
+        self,
+        project_id: str,
+        requirement: str,
+        workflow_profile: str | None = None,
+    ) -> None:
         """Start a new workflow for a project.
 
         Initializes context, state machine, file manager, git repo,
@@ -99,7 +107,12 @@ class EventDrivenOrchestrator:
         # Initialize project state
         context = AgentContext(requirement=requirement, project_id=project_id)
         context.language = settings.default_language
+        profile = resolve_workflow_profile(requirement, explicit=workflow_profile)
+        context.workflow_profile = profile.name
+        context.workflow_profile_display = profile.display_name
+        context.workflow_prompt_context = profile.prompt_context
         self._contexts[project_id] = context
+        self.state_store.update_workflow_profile(project_id, profile.name)
 
         self._state_machines[project_id] = StateMachine(
             max_iterations=settings.max_review_iterations
@@ -115,6 +128,11 @@ class EventDrivenOrchestrator:
 
         # Notify frontend
         await self._send_terminal(project_id, "agent", f"Initialized project {project_id}\n")
+        await self._send_terminal(
+            project_id,
+            "agent",
+            f"Detected workflow profile: {profile.display_name}\n",
+        )
 
         # Start workflow
         sm = self._state_machines[project_id]
@@ -180,6 +198,12 @@ class EventDrivenOrchestrator:
 
         context = AgentContext(requirement=requirement, project_id=project_id)
         context.language = settings.default_language
+        profile = get_workflow_profile(project.workflow_profile if project else None)
+        context.workflow_profile = profile.name
+        context.workflow_profile_display = profile.display_name
+        context.workflow_prompt_context = profile.prompt_context
+        if project:
+            context.artifact_status = deepcopy(project.artifact_status)
 
         fm = FileManager(base_dir=os.path.join(settings.output_dir, project_id))
         # Document outputs map to dedicated files; everything else is code.
@@ -351,14 +375,14 @@ class EventDrivenOrchestrator:
             for err in syntax_errors:
                 await self._send_terminal(project_id, "stderr", err + "\n")
 
-            if sm.can_iterate():
-                context.review_feedback = (
+            if self._start_repair_iteration(
+                project_id,
+                context,
+                (
                     "The generated code has syntax errors. Please fix them.\n\n"
                     + "\n".join(syntax_errors)
-                )
-                context.iteration = sm._review_count
-                self.state_store.increment_iteration(project_id)
-
+                ),
+            ):
                 # Stay in CODING state, loop back to coder
                 await self.ws_manager.send_message(project_id, {
                     "type": "agent_status",
@@ -373,6 +397,51 @@ class EventDrivenOrchestrator:
                     payload={"reason": "syntax_errors", "errors": syntax_errors},
                 )
             # Out of iterations — proceed to reviewer for final assessment
+
+        if context.workflow_profile == "static_web":
+            await self._send_terminal(project_id, "agent", "Validating static web artifact\n")
+            fm = FileManager(base_dir=os.path.join(settings.output_dir, project_id))
+            artifact_status = WebArtifactValidator(fm).validate()
+            if artifact_status.get("status") == "ready":
+                artifact_status["preview_url"] = f"/api/projects/{project_id}/preview/"
+                await self._send_terminal(
+                    project_id,
+                    "agent",
+                    f"Preview ready: {artifact_status['preview_url']}\n",
+                )
+            else:
+                await self._send_terminal(
+                    project_id,
+                    "stderr",
+                    f"Preview unavailable: {artifact_status.get('status', 'unknown')}\n",
+                )
+
+            context.artifact_status = deepcopy(artifact_status)
+            self.state_store.update_artifact_status(project_id, artifact_status)
+            await self._notify_workflow_state(project_id, sm)
+
+            repairable_issues = [
+                issue for issue in artifact_status.get("issues", [])
+                if issue.get("repairable")
+            ]
+            if repairable_issues and self._start_repair_iteration(
+                project_id,
+                context,
+                "The generated static web artifact failed validation. "
+                "Please fix these issues:\n\n"
+                + "\n".join(
+                    f"- {issue.get('message', 'Unknown validation issue')}"
+                    for issue in repairable_issues
+                ),
+            ):
+                return Event(
+                    type=EventType.ITERATION_STARTED,
+                    project_id=project_id,
+                    payload={
+                        "reason": "web_artifact_validation",
+                        "issues": repairable_issues,
+                    },
+                )
 
         return Event(
             type=EventType.SYNTAX_CHECKED,
@@ -391,22 +460,25 @@ class EventDrivenOrchestrator:
 
         review_passed = event.payload.get("metadata", {}).get("passed", False)
 
-        if not review_passed and sm.can_iterate():
-            # Set up iteration context
-            context.review_feedback = event.payload.get("output", "")
-            context.iteration = sm._review_count
-            self.state_store.increment_iteration(project_id)
+        if (
+            not review_passed
+            and sm.can_iterate()
+            and self._can_start_repair_iteration(project_id)
+        ):
+            transitioned = sm.transition_to(WorkflowState.CODING)
+            if transitioned and self._start_repair_iteration(
+                project_id,
+                context,
+                event.payload.get("output", ""),
+            ):
+                self.state_store.update_state(project_id, WorkflowState.CODING)
+                await self._notify_workflow_state(project_id, sm)
 
-            # Transition back to CODING
-            sm.transition_to(WorkflowState.CODING)
-            self.state_store.update_state(project_id, WorkflowState.CODING)
-            await self._notify_workflow_state(project_id, sm)
-
-            return Event(
-                type=EventType.ITERATION_STARTED,
-                project_id=project_id,
-                payload={"reason": "review_feedback", "review": event.payload.get("output", "")},
-            )
+                return Event(
+                    type=EventType.ITERATION_STARTED,
+                    project_id=project_id,
+                    payload={"reason": "review_feedback", "review": event.payload.get("output", "")},
+                )
 
         # Workflow complete
         sm.transition_to(WorkflowState.DONE)
@@ -444,6 +516,31 @@ class EventDrivenOrchestrator:
             "reviewer": f"review: add review report{iteration}",
         }
         return msg_map.get(plugin.name, f"{plugin.name}: update")
+
+    def _start_repair_iteration(
+        self,
+        project_id: str,
+        context: AgentContext,
+        review_feedback: str,
+    ) -> bool:
+        """Consume shared retry budget for repair iterations before re-running coder."""
+        project = self.state_store.get_project(project_id)
+        if project is None or not self._can_start_repair_iteration(project_id):
+            return False
+
+        self.state_store.increment_iteration(project_id)
+        updated_project = self.state_store.get_project(project_id)
+        context.review_feedback = review_feedback
+        context.iteration = updated_project.iteration_count if updated_project else project.iteration_count + 1
+        return True
+
+    def _can_start_repair_iteration(self, project_id: str) -> bool:
+        """Return whether shared persisted retry budget remains for repair loops."""
+        project = self.state_store.get_project(project_id)
+        sm = self._state_machines.get(project_id)
+        if project is None or sm is None:
+            return False
+        return project.iteration_count < sm.max_iterations
 
     async def _transition_state(
         self, project_id: str, sm: StateMachine, plugin: AgentPlugin, output: AgentOutput
@@ -507,6 +604,7 @@ class EventDrivenOrchestrator:
     async def _notify_workflow_state(self, project_id: str, sm: StateMachine) -> None:
         """Send workflow state update via WebSocket."""
         from backend.orchestrator.state_machine import WorkflowState as WS
+
         progress_map = {
             WS.IDLE: 0,
             WS.PLANNING: 10,
@@ -515,10 +613,24 @@ class EventDrivenOrchestrator:
             WS.REVIEWING: 80,
             WS.DONE: 100,
         }
+        project = self.state_store.get_project(project_id)
+        profile_name = project.workflow_profile if project else get_workflow_profile(None).name
+        artifact_status = (
+            deepcopy(project.artifact_status)
+            if project
+            else {
+                "type": "none",
+                "status": "unknown",
+                "preview_url": "",
+                "issues": [],
+            }
+        )
         await self.ws_manager.send_message(project_id, {
             "type": "workflow_state",
             "project_id": project_id,
             "state": sm.current.value,
             "overall_progress": progress_map.get(sm.current, 0),
-            "iteration_count": sm._review_count,
+            "iteration_count": project.iteration_count if project else sm._review_count,
+            "workflow_profile": profile_name,
+            "artifact_status": artifact_status,
         })

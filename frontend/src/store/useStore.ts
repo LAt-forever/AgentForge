@@ -103,7 +103,22 @@ export const useStore = create<AppState>((set) => ({
       },
     })),
 
-  setWorkflowState: (workflowState) => set({ workflowState }),
+  setWorkflowState: (workflowState) =>
+    set((state) => ({
+      workflowState,
+      currentProject:
+        state.currentProject?.project_id === workflowState.project_id
+          ? {
+              ...state.currentProject,
+              state: workflowState.state,
+              iteration_count: workflowState.iteration_count,
+              workflow_profile:
+                workflowState.workflow_profile ?? state.currentProject.workflow_profile,
+              artifact_status:
+                workflowState.artifact_status ?? state.currentProject.artifact_status,
+            }
+          : state.currentProject,
+    })),
 
   setFiles: (files) => set({ files }),
   setCurrentFile: (currentFile) => set({ currentFile }),

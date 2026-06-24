@@ -5,8 +5,18 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
 from backend.config import settings
+from backend.core.workflow_profiles import DEFAULT_PROFILE, get_workflow_profile
 from backend.llm.client import LLMClient
 from backend.llm.models import LLMConfig
+
+
+def _default_artifact_status() -> dict:
+    return {
+        "type": "none",
+        "status": "unknown",
+        "preview_url": "",
+        "issues": [],
+    }
 
 
 @dataclass
@@ -21,6 +31,10 @@ class AgentContext:
     review_feedback: str = ""  # Reviewer Agent output (for iteration)
     iteration: int = 0
     language: str = "python"  # target code generation language
+    workflow_profile: str = DEFAULT_PROFILE
+    workflow_profile_display: str = get_workflow_profile(DEFAULT_PROFILE).display_name
+    workflow_prompt_context: str = ""
+    artifact_status: dict = field(default_factory=_default_artifact_status)
 
 
 @dataclass

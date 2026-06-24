@@ -1,0 +1,247 @@
+"""Workflow profile definitions and requirement-based resolution."""
+
+import re
+from copy import deepcopy
+from dataclasses import dataclass
+
+DEFAULT_PROFILE = "default"
+STATIC_WEB_PROFILE = "static_web"
+
+
+@dataclass(frozen=True)
+class WorkflowProfile:
+    """Configuration that adapts agent labels, prompts, and artifact handling."""
+
+    name: str
+    display_name: str
+    agent_labels: dict[str, str]
+    prompt_context: str = ""
+    validators: tuple[str, ...] = ()
+    preview_enabled: bool = False
+
+
+_DEFAULT_AGENT_LABELS = {
+    "pm": "PM",
+    "architect": "Architect",
+    "coder": "Coder",
+    "reviewer": "Reviewer",
+}
+
+_STATIC_WEB_AGENT_LABELS = {
+    "pm": "Product Brief",
+    "architect": "Web Structure",
+    "coder": "Frontend Build",
+    "reviewer": "Web Review",
+}
+
+_STATIC_WEB_PROMPT_CONTEXT = (
+    "Create browser-ready static files index.html, style.css, and script.js. "
+    "Please avoid external/CDN runtime deps. Review the result as an "
+    "interactive web page."
+)
+
+_PROFILES = {
+    DEFAULT_PROFILE: WorkflowProfile(
+        name=DEFAULT_PROFILE,
+        display_name="Default",
+        agent_labels=_DEFAULT_AGENT_LABELS,
+    ),
+    STATIC_WEB_PROFILE: WorkflowProfile(
+        name=STATIC_WEB_PROFILE,
+        display_name="Web App",
+        agent_labels=_STATIC_WEB_AGENT_LABELS,
+        prompt_context=_STATIC_WEB_PROMPT_CONTEXT,
+        validators=("web_artifact",),
+        preview_enabled=True,
+    ),
+}
+
+_STATIC_WEB_TERMS = (
+    "static web",
+    "static website",
+    "landing page",
+    "web",
+    "page",
+    "html",
+    "css",
+    "js",
+    "javascript",
+    "frontend",
+    "browser",
+    "website",
+    "timer",
+    "calculator",
+    "palette",
+    "dashboard",
+    "form",
+    "网页",
+    "静态网页",
+    "静态网站",
+    "页面",
+    "前端",
+    "浏览器",
+    "网站",
+    "落地页",
+    "计时器",
+    "计算器",
+    "调色板",
+    "仪表盘",
+    "表单",
+)
+
+_ASCII_STATIC_WEB_TERMS = (
+    "static web",
+    "static website",
+    "landing page",
+    "web",
+    "page",
+    "html",
+    "css",
+    "js",
+    "javascript",
+    "frontend",
+    "browser",
+    "website",
+    "timer",
+    "calculator",
+    "palette",
+    "dashboard",
+    "form",
+)
+
+_CJK_STATIC_WEB_TERMS = (
+    "网页",
+    "静态网页",
+    "静态网站",
+    "页面",
+    "前端",
+    "浏览器",
+    "网站",
+    "落地页",
+    "计时器",
+    "计算器",
+    "调色板",
+    "仪表盘",
+    "表单",
+)
+
+_ASCII_EXPLICIT_WEB_TERMS = (
+    "static web",
+    "static website",
+    "web app",
+    "web page",
+    "landing page",
+    "html",
+    "css",
+    "js",
+    "javascript",
+    "frontend",
+    "browser",
+    "website",
+)
+
+_CJK_EXPLICIT_WEB_TERMS = (
+    "网页",
+    "静态网页",
+    "静态网站",
+    "前端",
+    "浏览器",
+    "网站",
+    "落地页",
+)
+
+_ASCII_CLI_TERMS = (
+    "cli",
+    "command line",
+    "command-line",
+    "terminal",
+    "console",
+    "shell",
+)
+
+_CJK_CLI_TERMS = (
+    "命令行",
+    "终端",
+    "控制台",
+    "shell",
+)
+
+_ASCII_CODE_TERMS = (
+    "api",
+    "backend",
+    "python",
+    "scraper",
+    "server",
+    "script",
+    "library",
+    "package",
+    "module",
+    "algorithm",
+)
+
+_CJK_CODE_TERMS = (
+    "脚本",
+    "库",
+    "模块",
+    "算法",
+    "排序",
+    "后端",
+)
+
+
+def get_workflow_profile(name: str | None) -> WorkflowProfile:
+    """Return a workflow profile, falling back to default for unknown names."""
+    profile = _PROFILES.get(name or DEFAULT_PROFILE, _PROFILES[DEFAULT_PROFILE])
+    return WorkflowProfile(
+        name=profile.name,
+        display_name=profile.display_name,
+        agent_labels=deepcopy(profile.agent_labels),
+        prompt_context=profile.prompt_context,
+        validators=tuple(profile.validators),
+        preview_enabled=profile.preview_enabled,
+    )
+
+
+def resolve_workflow_profile(
+    requirement: str, explicit: str | None = None
+) -> WorkflowProfile:
+    """Resolve a profile from an explicit choice or requirement text."""
+    if explicit:
+        return get_workflow_profile(explicit)
+
+    normalized = requirement.lower()
+    if _matches_default_code_requirement(normalized) and not _matches_explicit_web_requirement(normalized):
+        return get_workflow_profile(DEFAULT_PROFILE)
+    if _matches_static_web_requirement(normalized):
+        return get_workflow_profile(STATIC_WEB_PROFILE)
+    return get_workflow_profile(DEFAULT_PROFILE)
+
+
+def _matches_static_web_requirement(requirement: str) -> bool:
+    for term in _ASCII_STATIC_WEB_TERMS:
+        if re.search(r"\b" + re.escape(term) + r"\b", requirement):
+            return True
+    return any(term in requirement for term in _CJK_STATIC_WEB_TERMS)
+
+
+def _matches_explicit_web_requirement(requirement: str) -> bool:
+    for term in _ASCII_EXPLICIT_WEB_TERMS:
+        if re.search(r"\b" + re.escape(term) + r"\b", requirement):
+            return True
+    return any(term in requirement for term in _CJK_EXPLICIT_WEB_TERMS)
+
+
+def _matches_cli_requirement(requirement: str) -> bool:
+    for term in _ASCII_CLI_TERMS:
+        if re.search(r"\b" + re.escape(term) + r"\b", requirement):
+            return True
+    return any(term in requirement for term in _CJK_CLI_TERMS)
+
+
+def _matches_default_code_requirement(requirement: str) -> bool:
+    if _matches_cli_requirement(requirement):
+        return True
+    for term in _ASCII_CODE_TERMS:
+        if re.search(r"\b" + re.escape(term) + r"\b", requirement):
+            return True
+    return any(term in requirement for term in _CJK_CODE_TERMS)

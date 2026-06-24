@@ -13,10 +13,14 @@ class PMAgent(BaseAgent):
     async def run(self, context: AgentContext) -> AgentOutput:
         """Analyze requirement and produce a structured functional specification."""
         system_prompt = self._load_prompt("pm")
-        user_prompt = (
-            f"User Requirement:\n{context.requirement}\n\n"
+        user_prompt_parts = []
+        if context.workflow_prompt_context:
+            user_prompt_parts.append(f"Workflow Context:\n{context.workflow_prompt_context}")
+        user_prompt_parts.append(f"User Requirement:\n{context.requirement}")
+        user_prompt_parts.append(
             "Please analyze and produce a structured functional specification."
         )
+        user_prompt = "\n\n".join(user_prompt_parts)
 
         spec = await self._call_llm(
             system_prompt=system_prompt,

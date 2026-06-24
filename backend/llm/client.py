@@ -15,10 +15,11 @@ class LLMClient:
     """Client for calling LLM APIs with retry and fallback."""
 
     # Fallback model mapping: primary -> fallback
-    # Only DeepSeek and GLM, no Claude/OpenAI
-    _FALLBACK_MODELS = {
-        "deepseek-v4-pro": "glm-4-plus",
-        "glm-4-plus": "deepseek-v4-pro",
+    _FALLBACK_MODELS_BY_PROVIDER = {
+        ModelProvider.ANTHROPIC: "gpt-4o",
+        ModelProvider.OPENAI: "claude-3-5-sonnet-20241022",
+        ModelProvider.DEEPSEEK: "claude-3-5-sonnet-20241022",
+        ModelProvider.GLM: "deepseek-v4-pro",
     }
 
     def __init__(
@@ -97,9 +98,9 @@ class LLMClient:
         last_error: Exception | None = None
         models_to_try = [config.model]
 
-        # Add fallback model if known
-        fallback = self._FALLBACK_MODELS.get(config.model)
-        if fallback:
+        # Add one alternative provider fallback for the primary provider.
+        fallback = self._fallback_model_for(config.model)
+        if fallback and fallback != config.model:
             models_to_try.append(fallback)
 
         for model in models_to_try:
@@ -125,6 +126,11 @@ class LLMClient:
                         await asyncio.sleep(wait_seconds)
 
         raise last_error or RuntimeError("All LLM calls failed")
+
+    def _fallback_model_for(self, model: str) -> str | None:
+        """Return a default fallback model for the model's provider."""
+        provider = self._get_provider(model)
+        return self._FALLBACK_MODELS_BY_PROVIDER.get(provider)
 
     async def _call_anthropic(self, prompt: str, config: LLMConfig, model: str) -> LLMResponse:
         """Call Anthropic messages API."""

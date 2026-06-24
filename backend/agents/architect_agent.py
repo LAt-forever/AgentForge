@@ -13,7 +13,11 @@ class ArchitectAgent(BaseAgent):
     async def run(self, context: AgentContext) -> AgentOutput:
         """Generate system architecture from the functional specification."""
         system_prompt = self._load_prompt("architect")
-        user_prompt = f"Functional Specification:\n{context.spec}"
+        user_prompt_parts = []
+        if context.workflow_prompt_context:
+            user_prompt_parts.append(f"Workflow Context:\n{context.workflow_prompt_context}")
+        user_prompt_parts.append(f"Functional Specification:\n{context.spec}")
+        user_prompt = "\n\n".join(user_prompt_parts)
 
         architecture = await self._call_llm(
             system_prompt=system_prompt,

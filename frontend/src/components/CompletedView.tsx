@@ -19,16 +19,36 @@ export const CompletedView: React.FC<CompletedViewProps> = ({ onFollowUp }) => {
   const agentStatuses = useStore((s) => s.agentStatuses);
   const projectId = useStore((s) => s.projectId);
   const projectList = useStore((s) => s.projectList);
+  const currentProject = useStore((s) => s.currentProject);
   const files = useStore((s) => s.files);
   const setActiveView = useStore((s) => s.setActiveView);
   const setActiveTab = useStore((s) => s.setActiveTab);
 
   const requirement = projectList.find((p) => p.project_id === projectId)?.requirement ?? 'Project';
   const fileCount = files.filter((f) => !['spec.md', 'architecture.md', 'review.md'].includes(f)).length;
+  const isWebApp = currentProject?.workflow_profile === 'static_web';
+  const artifactStatus = currentProject?.artifact_status;
+  const previewReady = artifactStatus?.status === 'ready' && Boolean(artifactStatus.preview_url);
+  const successTitle = isWebApp
+    ? previewReady
+      ? '✓ Preview ready'
+      : 'Preview not ready'
+    : '✓ All checks passed';
+  const successDescription = isWebApp
+    ? previewReady
+      ? `Static web app validated. Generated ${fileCount} file${fileCount === 1 ? '' : 's'}.`
+      : `Static web app generated, but preview status is ${artifactStatus?.status ?? 'unknown'}.`
+    : `Generated ${fileCount} file${fileCount === 1 ? '' : 's'}. All tests passing.`;
 
   const openInEditor = () => {
     setActiveTab('explorer');
     setActiveView('orchestrator');
+  };
+
+  const previewApp = () => {
+    if (artifactStatus?.preview_url) {
+      window.open(artifactStatus.preview_url, '_blank', 'noopener,noreferrer');
+    }
   };
 
   const exportProject = () => {
@@ -61,10 +81,10 @@ export const CompletedView: React.FC<CompletedViewProps> = ({ onFollowUp }) => {
           }}
         >
           <div style={{ color: 'var(--accent-green)', fontWeight: 600, fontSize: '14px', marginBottom: '4px' }}>
-            ✓ All checks passed
+            {successTitle}
           </div>
           <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-            Generated {fileCount} file{fileCount === 1 ? '' : 's'}. All tests passing.
+            {successDescription}
           </div>
         </div>
 
@@ -83,12 +103,18 @@ export const CompletedView: React.FC<CompletedViewProps> = ({ onFollowUp }) => {
             Project: {projectId}
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
+            <Stat label="Mode" value={isWebApp ? 'Web App' : 'Default'} />
             <Stat label="Time Elapsed" value="—" />
             <Stat label="Tokens Used" value="—" />
           </div>
         </div>
 
         <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {isWebApp && (
+            <ActionButton primary={previewReady} disabled={!previewReady} onClick={previewApp}>
+              ▶ Preview App
+            </ActionButton>
+          )}
           <ActionButton primary onClick={openInEditor}>
             &lt;/&gt; Open in Editor
           </ActionButton>
@@ -159,23 +185,30 @@ const Stat: React.FC<{ label: string; value: string }> = ({ label, value }) => (
   </div>
 );
 
-const ActionButton: React.FC<{ children: React.ReactNode; onClick: () => void; primary?: boolean }> = ({
+const ActionButton: React.FC<{ children: React.ReactNode; onClick: () => void; primary?: boolean; disabled?: boolean }> = ({
   children,
   onClick,
   primary,
+  disabled,
 }) => (
   <button
     onClick={onClick}
+    disabled={disabled}
     style={{
       width: '100%',
       padding: '10px',
       borderRadius: '6px',
-      border: primary ? 'none' : '1px solid var(--border-color)',
-      background: primary ? 'var(--accent-blue)' : 'var(--bg-tertiary)',
-      color: primary ? '#fff' : 'var(--text-primary)',
+      border: primary && !disabled ? 'none' : '1px solid var(--border-color)',
+      background: disabled
+        ? 'var(--bg-secondary)'
+        : primary
+          ? 'var(--accent-blue)'
+          : 'var(--bg-tertiary)',
+      color: disabled ? 'var(--text-muted)' : primary ? '#fff' : 'var(--text-primary)',
       fontSize: '13px',
       fontWeight: 600,
-      cursor: 'pointer',
+      cursor: disabled ? 'not-allowed' : 'pointer',
+      opacity: disabled ? 0.65 : 1,
     }}
   >
     {children}

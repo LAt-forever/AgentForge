@@ -10,6 +10,14 @@ from backend.tools.code_runner import CodeRunner
 from backend.tools.docker_sandbox import ExecutionResult
 
 
+@pytest.fixture(autouse=True)
+def local_syntax_mode(monkeypatch):
+    """Keep local-mode tests isolated from the developer's .env."""
+    from backend.tools import code_runner
+
+    monkeypatch.setattr(code_runner.settings, "use_docker_sandbox", False)
+
+
 @pytest.fixture
 def runner():
     return CodeRunner(timeout=5)

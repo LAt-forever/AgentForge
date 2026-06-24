@@ -19,13 +19,24 @@ interface OrchestratorViewProps {
 export const OrchestratorView: React.FC<OrchestratorViewProps> = ({ onFollowUp, onSelectProject }) => {
   const activeTab = useStore((s) => s.activeTab);
   const currentFile = useStore((s) => s.currentFile);
+  const currentProject = useStore((s) => s.currentProject);
   const setSelectedDiffFile = useStore((s) => s.setSelectedDiffFile);
   const setActiveView = useStore((s) => s.setActiveView);
+  const isWebApp = currentProject?.workflow_profile === 'static_web';
+  const previewUrl = currentProject?.artifact_status?.preview_url ?? '';
+  const canPreview = currentProject?.artifact_status?.status === 'ready' && Boolean(previewUrl);
+  const showPreviewButton = isWebApp && (currentFile === 'index.html' || canPreview);
 
   const openDiff = () => {
     if (currentFile) {
       setSelectedDiffFile(currentFile);
       setActiveView('diff');
+    }
+  };
+
+  const openPreview = () => {
+    if (previewUrl) {
+      window.open(previewUrl, '_blank', 'noopener,noreferrer');
     }
   };
 
@@ -38,11 +49,30 @@ export const OrchestratorView: React.FC<OrchestratorViewProps> = ({ onFollowUp, 
             style={{
               display: 'flex',
               justifyContent: 'flex-end',
+              gap: '8px',
               padding: '4px 8px',
               borderBottom: '1px solid var(--border-color)',
               background: 'var(--bg-secondary)',
             }}
           >
+            {showPreviewButton && (
+              <button
+                onClick={openPreview}
+                disabled={!canPreview}
+                style={{
+                  fontSize: '11px',
+                  padding: '4px 10px',
+                  borderRadius: '4px',
+                  border: '1px solid var(--border-color)',
+                  background: canPreview ? 'var(--accent-blue)' : 'var(--bg-tertiary)',
+                  color: canPreview ? '#fff' : 'var(--text-muted)',
+                  cursor: canPreview ? 'pointer' : 'not-allowed',
+                  opacity: canPreview ? 1 : 0.65,
+                }}
+              >
+                Preview
+              </button>
+            )}
             <button
               onClick={openDiff}
               style={{

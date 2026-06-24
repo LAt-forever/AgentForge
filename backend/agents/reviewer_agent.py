@@ -32,7 +32,9 @@ class ReviewerAgent(BaseAgent):
         actual_files = fm.list_files()
 
         # Filter to code files + requirements/spec for context
-        code_extensions = (".py", ".js", ".ts", ".go", ".rs", ".java", ".cpp", ".c", ".h")
+        code_extensions = (
+            ".py", ".js", ".ts", ".go", ".rs", ".java", ".cpp", ".c", ".h", ".html", ".css"
+        )
         review_files = [
             f for f in actual_files
             if f.endswith(code_extensions) or f in ("requirements.txt", "README.md")
@@ -48,6 +50,19 @@ class ReviewerAgent(BaseAgent):
                 code_sections.append(f"### {filepath}\n```\n{content}\n```")
             except Exception:
                 continue
+
+        using_context_code = False
+        if not code_sections and context.code:
+            for filepath, content in context.code.items():
+                if not (
+                    filepath.endswith(code_extensions)
+                    or filepath in ("requirements.txt", "README.md")
+                ):
+                    continue
+                if len(content.strip()) < 5:
+                    continue
+                code_sections.append(f"### {filepath}\n```\n{content}\n```")
+            using_context_code = bool(code_sections)
 
         if not code_sections:
             # No actual code files on disk - this is a real failure
@@ -75,16 +90,24 @@ class ReviewerAgent(BaseAgent):
 
         code_text = "\n\n".join(code_sections)
 
-        analysis_section = self._run_static_analysis(context.project_id, review_files)
-
-        user_prompt = (
-            f"Functional Specification:\n{context.spec}\n\n"
-            f"Architecture:\n{context.architecture}\n\n"
-            f"Code Files:\n{code_text}"
-            f"{analysis_section}\n\n"
-            f"Important: Code files ARE provided above. Do NOT say 'no code files provided'. "
-            f"Review the actual code for completeness, correctness, and quality."
+        analysis_section = (
+            "" if using_context_code
+            else self._run_static_analysis(context.project_id, review_files)
         )
+
+        user_prompt_parts = []
+        if context.workflow_prompt_context:
+            user_prompt_parts.append(f"Workflow Context:\n{context.workflow_prompt_context}")
+        user_prompt_parts.extend([
+            f"Functional Specification:\n{context.spec}",
+            f"Architecture:\n{context.architecture}",
+            f"Code Files:\n{code_text}{analysis_section}",
+            (
+                "Important: Code files ARE provided above. Do NOT say 'no code files "
+                "provided'. Review the actual code for completeness, correctness, and quality."
+            ),
+        ])
+        user_prompt = "\n\n".join(user_prompt_parts)
 
         review_response = await self._call_llm(
             system_prompt=system_prompt,
@@ -95,7 +118,7 @@ class ReviewerAgent(BaseAgent):
         review_data = self._parse_review(review_response)
 
         # Post-process: override false negatives
-        if actual_files and not review_data.get("passed", False):
+        if (actual_files or using_context_code) and not review_data.get("passed", False):
             issues = review_data.get("issues", [])
             filtered_issues = [
                 issue for issue in issues
